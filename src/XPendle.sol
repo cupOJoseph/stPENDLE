@@ -15,6 +15,7 @@ interface IVEPENDLE {
 }
 
 interface IMerkleDistributor {
+    function claimable(address account) external view returns (uint256);
     function claim(uint256 index, address account, uint256 amount, bytes32[] calldata merkleProof) external;
 }
 
@@ -59,13 +60,25 @@ contract xPENDLE is ERC4626, Ownable {
         return depositAmount;
     }
 
+
+    // @dev This function is called by the anyone to claim fees to the vault.
+    // This should be done daily or more often to compound rewards.
     function claimFees() public {
-        
+        uint claimedAmount = merkleDistributor.claim(0, msg.sender, 0, new bytes32[](0));
         
         if (feeSwitchIsEnabled) {
-            uint fee = (depositAmount * feeBasisPoints) / 10000;
+            uint fee = (claimedAmount * feeBasisPoints) / 10000;
+            //do to: transfer % of claimed pendle to feeReceiver
+            claimedAmount -= fee;
         }   
+
+        //lock everything claimed to the vault
+        vePendle.lock(claimedAmount, lockDurationDefault);
     }
+
+
+    /// =========== Governance Council Functions ================ ///
+
 
     function setFeeSwitch(bool enabled) public onlyOwner {
         feeSwitchIsEnabled = enabled;
