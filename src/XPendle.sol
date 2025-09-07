@@ -19,7 +19,7 @@ interface IVEPENDLE {
 
 interface IMerkleDistributor {
     function claimable(address account) external view returns (uint256);
-    function claim(uint256 index, address account, uint256 amount, bytes32[] calldata merkleProof) external;
+    function claim(uint256 index, address account, uint256 amount, bytes32[] calldata merkleProof) external returns (uint256);
 }
 
 interface IVotingController {
@@ -39,6 +39,8 @@ interface IERC20 {
  * @dev Fully compliant with ERC-4626 tokenized vault standard using Solady
  */
 contract xPENDLE is ERC4626, Ownable, ReentrancyGuard { 
+    string public constant name = "xPENDLE";
+    string public constant symbol = "xPEN";
     
     using SafeTransferLib for address;
     
