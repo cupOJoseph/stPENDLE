@@ -33,6 +33,7 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
 
     IPMerkleDistributor merkleDistributor;
     IPVotingEscrowMainchain votingEscrowMainchain;
+    IPVeToken vePendle;
 
     uint public lockDurationDefault = 0;
     
@@ -75,10 +76,12 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
         _;
     }
 
-    constructor(address _pendleTokenAddress, address _merkleDistributorAddress, address _voeingEscrowMainchain, address _usdtAddress, address _timelockController) {
-        underlyingAsset = _pendleTokenAddress;
-        vePendle = IPVotingEscrowMainchain(_voeingEscrowMainchain);
+    constructor(address _pendleTokenAddress, address _merkleDistributorAddress, address _votingEscrowMainchain, address _usdtAddress, address _timelockController) {
+        
+        votingEscrowMainchain = IPVotingEscrowMainchain(_votingEscrowMainchain);
         merkleDistributor = IPMerkleDistributor(_merkleDistributorAddress);
+        vePendle = IPVeToken(merkleDistributor.token());
+        underlyingAsset = _pendleTokenAddress;
         USDT = _usdtAddress;
         _setOwner(_timelockController);
         currentEpoch = block.timestamp / epochDuration;
@@ -202,12 +205,13 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
         require(amount > 0, "Amount must be greater than 0");
         require(lockDuration >= MIN_LOCK_DURATION, "Lock duration too short");
         require(lockDuration <= MAX_LOCK_DURATION, "Lock duration too long");
-        
+        require(SafeTransferLib.balanceOf(asset(), msg.sender) >= amount, "Insufficient balance");
         // Transfer PENDLE from user to vault
-        SafeTransferLib.safeTransferFrom(address(asset()), msg.sender, address(this), amount);
+        SafeTransferLib.safeTransferFrom(address(asset), msg.sender, address(this), amount);
         
         // Lock in vePENDLE
-        vePendle.lock(amount, lockDuration);
+        SafeTransferLib.safeApprove(address(asset), address(votingEscrowMainchain), amount);
+        votingEscrowMainchain.increaseLockPosition(amount, lockDuration);
         
         // Mint shares to user
         uint256 shares = previewDeposit(amount);
@@ -330,7 +334,7 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
     function _getAvailableWithdrawalAmount() internal view returns (uint256) {
         // This is a simplified calculation - in production you'd want more sophisticated logic
         // based on vePENDLE unlock schedules and vault liquidity
-        uint256 totalLocked = vePendle.balanceOf(address(this));
+        uint256 totalLocked = votingEscrowMainchain.balanceOf(address(this));
         uint256 available = totalLocked / 10; // Allow 10% of locked amount per epoch
         
         // Ensure we don't exceed pending withdrawals
