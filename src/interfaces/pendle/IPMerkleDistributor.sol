@@ -17,4 +17,6 @@ interface IPMerkleDistributor {
         uint256 totalAccrued,
         bytes32[] calldata proof
     ) external returns (uint256 amountVerified);
+
+    function token() external view returns (address);
 }

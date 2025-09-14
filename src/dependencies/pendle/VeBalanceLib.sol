@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity ^0.8.0;
 
-import "../../core/libraries/math/PMath.sol";
-import "../../core/libraries/Errors.sol";
+import "./PMath.sol";
+import "./Errors.sol";
 
 struct VeBalance {
     uint128 bias;

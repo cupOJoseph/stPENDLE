@@ -4,7 +4,7 @@
 pragma solidity ^0.8.26;
 
 import "./IPVeToken.sol";
-import {Checkpoint} from "../Dependencies/Pendle/VeHistoryLib.sol";
+import {Checkpoint} from "src/dependencies/pendle/VeHistoryLib.sol";
 
 interface IPVotingEscrowMainchain is IPVeToken {
 
