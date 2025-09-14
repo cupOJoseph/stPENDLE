@@ -5,17 +5,19 @@ import {Test, console} from "lib/forge-std/src/Test.sol";
 import {stPENDLE} from "../src/stPENDLE.sol";
 import {ERC20} from "lib/solady/src/tokens/ERC20.sol";
 import {TimelockController} from "lib/openzeppelin-contracts/contracts/governance/TimelockController.sol";
+import {IPVotingEscrowMainchain} from "src/interfaces/pendle/IPVotingEscrowMainchain.sol";
 import {IPVeToken} from "src/interfaces/pendle/IPVeToken.sol";
-import "src/dependencies/VaultStructs.sol";
+import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
+import {VaultPosition, UserPosition, WithdrawalRequest} from "src/dependencies/VaultStructs.sol";
 
+/// forge-lint: disable-start(all)
 // Mock contracts for testing
 contract MockVotingEscrowMainchain {
-    mapping(address => uint256) public balances;
+    mapping(address => uint128) public balances;
     mapping(address => uint128) public lockedBalances;
     mapping(address => uint128) public unlockTimes;
-    address public token;
-    constructor(address _token) {
-        token = _token;
+    uint128 public totalSupply;
+    constructor() {
     }
 
     function increaseLockPosition(uint128 additionalAmountToLock, uint128 expiry) external returns (uint128) {
@@ -31,17 +33,8 @@ contract MockVotingEscrowMainchain {
         balances[msg.sender] = 0;
         return balance;
     }
-}
 
-contract MockVEPENDLE is IPVeToken {
-    mapping(address => uint128) public balances;
-    mapping(address => uint128) public lockedBalances;
-    mapping(address => uint128) public unlockTimes;
-    uint128 public totalSupply;
-
-    constructor() {}
-
-    function balanceOf(address user) public view override returns (uint128) {
+    function balanceOf(address user) public view returns (uint128) {
         return balances[user];
     }
     
@@ -53,11 +46,11 @@ contract MockVEPENDLE is IPVeToken {
         return totalSupply;
     }
 
-    function totalSupplyCurrent() external returns (uint128) {
+    function totalSupplyCurrent() external view returns (uint128) {
         return totalSupply;
     }
 
-    function totalSupplyAndBalanceCurrent(address user) external returns (uint128, uint128) {
+    function totalSupplyAndBalanceCurrent(address user) external view returns (uint128, uint128) {
         return (totalSupply, balances[user]);
     }
 
@@ -78,8 +71,8 @@ contract MockMerkleDistributor {
     function claimable(address account) external view returns (uint256) {
         return claimableAmounts[account];
     }
-    
-    function claim(uint256 index, address account, uint256 amount, bytes32[] calldata merkleProof) external returns (uint256) {
+
+    function claim(uint256 /* index */, address account, uint256 /* amount */, bytes32[] calldata /* merkleProof */) external returns (uint256) {
         uint256 claimableAmount = claimableAmounts[account];
         claimableAmounts[account] = 0;
         return claimableAmount;
@@ -132,7 +125,6 @@ contract stPENDLETest is Test {
     MockUSDT public usdt;
     MockPENDLE public pendle;
     TimelockController public timelockController;
-    IPVeToken public vePendle;
     
     address public alice = address(0x1);
     address public bob = address(0x2);
@@ -148,10 +140,9 @@ contract stPENDLETest is Test {
     
     function setUp() public {
         // Deploy mock contracts
-        vePendle = new MockVEPENDLE();
         merkleDistributor = new MockMerkleDistributor();
         votingController = new MockVotingController();
-        votingEscrowMainchain = new MockVotingEscrowMainchain(address(vePendle));
+        votingEscrowMainchain = new MockVotingEscrowMainchain();
         address[] memory proposers = new address[](1);
         address[] memory executors = new address[](1);
         proposers[0] = address(this);
@@ -166,7 +157,6 @@ contract stPENDLETest is Test {
             address(merkleDistributor),
             address(votingEscrowMainchain),
             address(votingController),
-            address(usdt),
             address(timelockController)
 
             );
@@ -181,7 +171,6 @@ contract stPENDLETest is Test {
         
         // Label addresses for better test output
         vm.label(address(vault), "Vault");
-        vm.label(address(vePendle), "vePENDLE");
         vm.label(address(merkleDistributor), "MerkleDistributor");
         vm.label(address(usdt), "USDT");
         vm.label(address(pendle), "PENDLE");
@@ -190,11 +179,10 @@ contract stPENDLETest is Test {
         vm.label(feeReceiver, "FeeReceiver");
     }
     
-    function test_Constructor() public {
+    function test_Constructor() public view {
         assertEq(address(vault.votingEscrowMainchain()), address(votingEscrowMainchain));
         assertEq(address(vault.merkleDistributor()), address(merkleDistributor));
         assertEq(address(vault.votingController()), address(votingController));
-        assertEq(vault.USDT(), address(usdt));
     }
     
     function test_Deposit() public {
@@ -205,7 +193,7 @@ contract stPENDLETest is Test {
         
         assertGt(shares, 0, "Should receive shares");
         assertEq(vault.balanceOf(alice), shares, "User should have correct share balance");
-        assertEq(vePendle.balanceOf(address(vault)), DEPOSIT_AMOUNT, "Vault should have locked PENDLE");
+        assertEq(votingEscrowMainchain.balanceOf(address(vault)), DEPOSIT_AMOUNT, "Vault should have locked PENDLE");
         
         vm.stopPrank();
     }
@@ -406,6 +394,6 @@ contract stPENDLETest is Test {
     
     function test_RevertInvalidUSDTAddress() public {
         vm.expectRevert("Invalid USDT address");
-        vault.setUSDT(address(0));
     }
 }
+/// forge-lint: disable-end
