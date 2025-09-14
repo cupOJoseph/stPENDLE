@@ -10,15 +10,16 @@ import {IPMerkleDistributor} from "src/interfaces/IPMerkleDistributor.sol";
 import {IPVotingEscrowMainchain} from "src/interfaces/IPVotingEscrowMainchain.sol";
 import {IPVeToken} from "src/interfaces/IPVeToken.sol";
 import {IPVotingController} from "src/interfaces/IPVotingController.sol";
+import "./dependencies/pendle/VaultStructs.sol";
 
 /**
- * @title xPENDLE - ERC-4626 Vault for PENDLE Staking
+ * @title stPENDLE - ERC-4626 Vault for PENDLE Staking
  * @notice Accepts PENDLE deposits and stakes them in vePENDLE for rewards
  * @dev Fully compliant with ERC-4626 tokenized vault standard using Solady
  */
-contract xPENDLE is ERC4626, Ownable, ReentrancyGuard { 
-    string public constant name = "xPENDLE";
-    string public constant symbol = "xPEN";
+contract stPENDLE is ERC4626, Ownable, ReentrancyGuard { 
+    string public constant name = "stPENDLE";
+    string public constant symbol = "stPEN";
     
     using SafeTransferLib for address;
     
@@ -71,7 +72,7 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
     address public immutable underlyingAsset;
     
     modifier whenNotPaused() {
-        require(!paused(), "xPENDLE: Paused");
+        require(!paused(), "stPENDLE: Paused");
         _;
     }
 
