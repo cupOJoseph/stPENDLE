@@ -1,36 +1,16 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {ERC4626} from "solady/tokens/ERC4626.sol";
-import {Ownable} from "solady/auth/Ownable.sol";
+import {ERC4626} from "lib/solady/src/tokens/ERC4626.sol";
+import {IERC20} from "lib/solady/src/interfaces/IERC20.sol";
+import {Ownable} from "lib/solady/src/auth/Ownable.sol";
 import {SafeTransferLib} from "lib/solady/src/utils/SafeTransferLib.sol";
 import {ReentrancyGuard} from "lib/solady/src/utils/ReentrancyGuard.sol";
-
-//basic interface for vePENDLE. Some things are missing here but these are all we need.
-//
-interface IVEPENDLE {
-    function claimFees() external;
-    function lock(uint256 amount, uint256 lockDuration) external;
-    function unlock(uint256 amount) external;
-    function balanceOf(address account) external view returns (uint256);
-    function getLockedBalance(address account) external view returns (uint256);
-    function getUnlockTime(address account) external view returns (uint256);
-}
-
-interface IMerkleDistributor {
-    function claimable(address account) external view returns (uint256);
-    function claim(uint256 index, address account, uint256 amount, bytes32[] calldata merkleProof) external returns (uint256);
-}
-
+import {IPMerkleDistributor} from "src/interfaces/IPMerkleDistributor.sol";
+import {IPVotingEscrowMainchain} from "src/interfaces/IPVotingEscrowMainchain.sol";
+import {IPVeToken} from "src/interfaces/IPVeToken.sol";
 interface IVotingController {
     function vote(uint poll, uint voteAmount) external;
-}
-
-interface IERC20 {
-    function balanceOf(address account) external view returns (uint256);
-    function transfer(address to, uint256 amount) external returns (bool);
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-    function approve(address spender, uint256 amount) external returns (bool);
 }
 
 /**
@@ -49,10 +29,10 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
     address public feeReceiver;
     bool public useUSDTForFees = false;
     address public USDT;
-    
-    IVEPENDLE vePendle;
-    IMerkleDistributor merkleDistributor;
-    IVotingController votingController;
+    bool public paused = false;
+
+    IPMerkleDistributor merkleDistributor;
+    IPVotingEscrowMainchain votingEscrowMainchain;
 
     uint public lockDurationDefault = 0;
     
@@ -86,15 +66,21 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
     event WithdrawalProcessed(address indexed user, uint256 amount);
     event EpochUpdated(uint256 newEpoch);
     event FeesDistributed(uint256 pendleAmount, uint256 usdtAmount);
+    event Paused(bool paused);
 
     address public immutable underlyingAsset;
     
-    constructor(address pendleTokenAddress, address merkleDistributorAddress, address vePENDLETokenAddress, address votingControllerAddress, address usdtAddress) {
-        underlyingAsset = pendleTokenAddress;
-        vePendle = IVEPENDLE(vePENDLETokenAddress);
-        merkleDistributor = IMerkleDistributor(merkleDistributorAddress);
-        votingController = IVotingController(votingControllerAddress);
-        USDT = usdtAddress;
+    modifier whenNotPaused() {
+        require(!paused(), "xPENDLE: Paused");
+        _;
+    }
+
+    constructor(address _pendleTokenAddress, address _merkleDistributorAddress, address _voeingEscrowMainchain, address _usdtAddress, address _timelockController) {
+        underlyingAsset = _pendleTokenAddress;
+        vePendle = IPVotingEscrowMainchain(_voeingEscrowMainchain);
+        merkleDistributor = IPMerkleDistributor(_merkleDistributorAddress);
+        USDT = _usdtAddress;
+        _setOwner(_timelockController);
         currentEpoch = block.timestamp / epochDuration;
         lastEpochUpdate = block.timestamp;
     }
@@ -117,7 +103,7 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
         return contractBalance + totalPendingWithdrawals;
     }
 
-    function deposit(uint256 amount, address receiver) public override returns (uint256) {
+    function deposit(uint256 amount, address receiver) public override whenNotPaused returns (uint256) {
         uint depositAmount = super.deposit(amount, receiver);
 
         vePendle.lock(depositAmount, lockDurationDefault);
@@ -127,8 +113,9 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
 
     // @dev This function is called by the anyone to claim fees to the vault.
     // This should be done daily or more often to compound rewards.
-    function claimFees() public nonReentrant {
-        uint claimedAmount = merkleDistributor.claim(0, msg.sender, 0, new bytes32[](0));
+    function claimFees(bytes32[] calldata proof) public nonReentrant whenNotPaused {
+        uint256 totalAccrued = merkleDistributor.claimable(address(this));
+        uint claimedAmount = merkleDistributor.claim(msg.sender, totalAccrued, proof);
         
         if (feeSwitchIsEnabled && claimedAmount > 0) {
             uint fee = (claimedAmount * feeBasisPoints) / 10000;
@@ -149,11 +136,12 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
             }
             
             claimedAmount -= fee;
-        }   
+        }
+ 
 
         //lock everything claimed to the vault
         if (claimedAmount > 0) {
-            vePendle.lock(claimedAmount, lockDurationDefault);
+            votingEscrowMainchain.increaseLockPosition(claimedAmount, lockDurationDefault);
         }
     }
     
@@ -161,7 +149,7 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
      * @notice Request a withdrawal of PENDLE from the vault
      * @param amount Amount of PENDLE to withdraw
      */
-    function requestWithdrawal(uint256 amount) external nonReentrant {
+    function requestWithdrawal(uint256 amount) external nonReentrant whenNotPaused {
         require(amount > 0, "Amount must be greater than 0");
         require(balanceOf(msg.sender) >= amount, "Insufficient balance");
         
@@ -186,7 +174,7 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
      * @notice Process withdrawal requests for the current epoch
      * @dev Can be called by anyone to process pending withdrawals
      */
-    function processWithdrawals() external nonReentrant {
+    function processWithdrawals() external nonReentrant whenNotPaused {
         _updateEpoch();
         
         uint256 availableForWithdrawal = _getAvailableWithdrawalAmount();
@@ -210,7 +198,7 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
      * @param amount Amount of PENDLE to re-lock
      * @param lockDuration Duration to lock for
      */
-    function relockPendle(uint256 amount, uint256 lockDuration) external nonReentrant {
+    function relockPendle(uint256 amount, uint256 lockDuration) external nonReentrant whenNotPaused {
         require(amount > 0, "Amount must be greater than 0");
         require(lockDuration >= MIN_LOCK_DURATION, "Lock duration too short");
         require(lockDuration <= MAX_LOCK_DURATION, "Lock duration too long");
@@ -311,6 +299,23 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
         epochDuration = _duration;
     }
 
+    function setRewardsSplit(uint256 _rewardsSplit) public onlyOwner {
+        require(_rewardsSplit <= 100, "Rewards split cannot exceed 100%");
+        rewardsSplit = _rewardsSplit;
+    }
+
+    function setOwner(address _owner) public onlyOwner {
+        _setOwner(_owner);
+    }
+
+    function pause() public onlyOwner {
+        _setPause(true);
+    }
+    
+    function unpause() public onlyOwner {
+        _setPause(false);
+    }
+
     /// =========== Internal Functions ================ ///
     
     function _updateEpoch() internal {
@@ -356,4 +361,10 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
         // In reality, you'd want to use Uniswap V3, Chainlink oracle, or similar
         return pendleAmount;
     }
+
+    function _setPause(bool _paused) internal override  {
+        paused = _paused;
+        emit Paused(_paused);
+    }
+
 }
