@@ -5,8 +5,6 @@ pragma solidity ^0.8.26;
 
 import "./IPVeToken.sol";
 
-interface IPVotingEscrowMainchain is IPVeToken {
-
 struct Checkpoint {
     uint128 timestamp;
     VeBalance value;
@@ -17,7 +15,15 @@ struct VeBalance {
     uint128 slope;
 }
 
+interface IPVotingEscrowMainchain is IPVeToken {
+
     function increaseLockPosition(uint128 additionalAmountToLock, uint128 expiry) external returns (uint128);
+
+    function increaseLockPositionAndBroadcast(
+        uint128 additionalAmountToLock,
+        uint128 newExpiry,
+        uint256[] calldata chainIds
+    ) external returns (uint128 newVeBalance);
 
     function withdraw() external returns (uint128);
 

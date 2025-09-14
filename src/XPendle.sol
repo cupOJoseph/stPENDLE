@@ -9,9 +9,7 @@ import {ReentrancyGuard} from "lib/solady/src/utils/ReentrancyGuard.sol";
 import {IPMerkleDistributor} from "src/interfaces/IPMerkleDistributor.sol";
 import {IPVotingEscrowMainchain} from "src/interfaces/IPVotingEscrowMainchain.sol";
 import {IPVeToken} from "src/interfaces/IPVeToken.sol";
-interface IVotingController {
-    function vote(uint poll, uint voteAmount) external;
-}
+import {IPVotingController} from "src/interfaces/IPVotingController.sol";
 
 /**
  * @title xPENDLE - ERC-4626 Vault for PENDLE Staking
@@ -34,7 +32,8 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
     IPMerkleDistributor merkleDistributor;
     IPVotingEscrowMainchain votingEscrowMainchain;
     IPVeToken vePendle;
-
+    IPVotingController votingController;
+    
     uint public lockDurationDefault = 0;
     
     // Withdrawal queue management
@@ -76,11 +75,12 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
         _;
     }
 
-    constructor(address _pendleTokenAddress, address _merkleDistributorAddress, address _votingEscrowMainchain, address _usdtAddress, address _timelockController) {
+    constructor(address _pendleTokenAddress, address _merkleDistributorAddress, address _votingEscrowMainchain, address _votingControllerAddress, address _usdtAddress, address _timelockController) {
         
         votingEscrowMainchain = IPVotingEscrowMainchain(_votingEscrowMainchain);
         merkleDistributor = IPMerkleDistributor(_merkleDistributorAddress);
         vePendle = IPVeToken(merkleDistributor.token());
+        votingController = IPVotingController(_votingControllerAddress);
         underlyingAsset = _pendleTokenAddress;
         USDT = _usdtAddress;
         _setOwner(_timelockController);
@@ -334,7 +334,7 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
     function _getAvailableWithdrawalAmount() internal view returns (uint256) {
         // This is a simplified calculation - in production you'd want more sophisticated logic
         // based on vePENDLE unlock schedules and vault liquidity
-        uint256 totalLocked = votingEscrowMainchain.balanceOf(address(this));
+        uint256 totalLocked = vePendle.balanceOf(address(this));
         uint256 available = totalLocked / 10; // Allow 10% of locked amount per epoch
         
         // Ensure we don't exceed pending withdrawals
@@ -347,7 +347,7 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
     
     function _processWithdrawal(address user, uint256 amount) internal {
         // Unlock from vePENDLE
-        vePendle.unlock(amount);
+        uint256 withdrawnAmount = votingEscrowMainchain.withdraw();
         
         // Update pending amounts
         pendingWithdrawals[user] -= amount;
