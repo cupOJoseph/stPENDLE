@@ -4,16 +4,7 @@
 pragma solidity ^0.8.26;
 
 import "./IPVeToken.sol";
-
-struct Checkpoint {
-    uint128 timestamp;
-    VeBalance value;
-}
-
-struct VeBalance {
-    uint128 bias;
-    uint128 slope;
-}
+import {Checkpoint} from "../Dependencies/Pendle/VeHistoryLib.sol";
 
 interface IPVotingEscrowMainchain is IPVeToken {
 

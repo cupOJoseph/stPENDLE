@@ -33,7 +33,7 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
     IPVotingEscrowMainchain votingEscrowMainchain;
     IPVeToken vePendle;
     IPVotingController votingController;
-    
+
     uint public lockDurationDefault = 0;
     
     // Withdrawal queue management
@@ -76,7 +76,6 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
     }
 
     constructor(address _pendleTokenAddress, address _merkleDistributorAddress, address _votingEscrowMainchain, address _votingControllerAddress, address _usdtAddress, address _timelockController) {
-        
         votingEscrowMainchain = IPVotingEscrowMainchain(_votingEscrowMainchain);
         merkleDistributor = IPMerkleDistributor(_merkleDistributorAddress);
         vePendle = IPVeToken(merkleDistributor.token());
@@ -94,16 +93,14 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
     }
     
     /// @dev Returns the total amount of assets managed by the vault
-    /// This includes PENDLE locked in vePENDLE plus any pending withdrawals
+    /// This includes locked PENDLE, PENDLE locked in vePENDLE
     function totalAssets() public view virtual override returns (uint256) {
         // Get the balance of PENDLE tokens in this contract
         uint256 contractBalance = SafeTransferLib.balanceOf(underlyingAsset, address(this));
-        
-        // Get the total locked amount in vePENDLE (this would need to be tracked)
-        // For now, we'll use the contract balance as a starting point
-        // You may want to add a mapping to track total locked amounts
-        
-        return contractBalance + totalPendingWithdrawals;
+        // get vePendleBalance
+        uint256 vePendleBalance = SafeTransferLib.balanceOf(address(vePendle), address(this));
+
+        return contractBalance + vePendleBalance;
     }
 
     function deposit(uint256 amount, address receiver) public override whenNotPaused returns (uint256) {
@@ -182,7 +179,9 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
         
         uint256 availableForWithdrawal = _getAvailableWithdrawalAmount();
         require(availableForWithdrawal > 0, "No withdrawals available this epoch");
-        
+        // withdraw from voting escrow
+        uint256 withdrawnAmount = votingEscrowMainchain.withdraw();
+        require(withdrawnAmount >= availableForWithdrawal, "Withdrawn amount is less than available withdrawal amount");
         // Process withdrawal requests in FIFO order
         // This is a simplified implementation - in production you might want more sophisticated queue management
         for (uint256 i = 0; i < withdrawalRequests[msg.sender].length; i++) {
@@ -260,7 +259,16 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
         return request.amount <= availableForWithdrawal;
     }
 
+    /// ============ View Functions ================ ///
+
+    function previewVEWithdraw() public view returns (uint256) {
+        uint256 withdrawableAmount = votingEscrowMainchain.staticcall(abi.encodeWithSelector(votingEscrowMainchain.withdraw.selector));
+        return withdrawableAmount;
+    }
+
     /// =========== Governance Council Functions ================ ///
+
+
 
     function setFeeSwitch(bool enabled) public onlyOwner {
         feeSwitchIsEnabled = enabled;
@@ -336,7 +344,10 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
         // based on vePENDLE unlock schedules and vault liquidity
         uint256 totalLocked = vePendle.balanceOf(address(this));
         uint256 available = totalLocked / 10; // Allow 10% of locked amount per epoch
-        
+        // Ensure we don't exceed withdrawable amount
+        if (available > withdrawableAmount) {
+            available = withdrawableAmount;
+        }
         // Ensure we don't exceed pending withdrawals
         if (available > totalPendingWithdrawals) {
             available = totalPendingWithdrawals;
@@ -346,9 +357,7 @@ contract xPENDLE is ERC4626, Ownable, ReentrancyGuard {
     }
     
     function _processWithdrawal(address user, uint256 amount) internal {
-        // Unlock from vePENDLE
-        uint256 withdrawnAmount = votingEscrowMainchain.withdraw();
-        
+        require(SafeTransferLib.balanceOf(address(asset()), address(this)) >= amount, "Insufficient Pendle balance");
         // Update pending amounts
         pendingWithdrawals[user] -= amount;
         totalPendingWithdrawals -= amount;
