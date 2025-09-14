@@ -13,7 +13,11 @@ contract MockVotingEscrowMainchain {
     mapping(address => uint256) public balances;
     mapping(address => uint128) public lockedBalances;
     mapping(address => uint128) public unlockTimes;
-  
+    address public token;
+    constructor(address _token) {
+        token = _token;
+    }
+
     function increaseLockPosition(uint128 additionalAmountToLock, uint128 expiry) external returns (uint128) {
         balances[msg.sender] += additionalAmountToLock;
         lockedBalances[msg.sender] += additionalAmountToLock;
@@ -147,7 +151,7 @@ contract stPENDLETest is Test {
         vePendle = new MockVEPENDLE();
         merkleDistributor = new MockMerkleDistributor();
         votingController = new MockVotingController();
-        votingEscrowMainchain = new MockVotingEscrowMainchain();
+        votingEscrowMainchain = new MockVotingEscrowMainchain(address(vePendle));
         address[] memory proposers = new address[](1);
         address[] memory executors = new address[](1);
         proposers[0] = address(this);
