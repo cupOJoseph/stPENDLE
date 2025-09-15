@@ -21,13 +21,13 @@ library ExpiryUtils {
      * @param _expiry The expiry in epoch time.
      * @param _delimiter Can be any delimiter, but usually "-" or " ".
      * @return result Returns the concatenated string.
-     **/
-    function concat(
-        string memory _bt,
-        string memory _yt,
-        uint256 _expiry,
-        string memory _delimiter
-    ) internal pure returns (string memory result) {
+     *
+     */
+    function concat(string memory _bt, string memory _yt, uint256 _expiry, string memory _delimiter)
+        internal
+        pure
+        returns (string memory result)
+    {
         result = string(abi.encodePacked(_bt, _delimiter, _yt, _delimiter, toRFC2822String(_expiry)));
     }
 

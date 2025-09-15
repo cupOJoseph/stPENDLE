@@ -7,7 +7,6 @@ import "./IPVeToken.sol";
 import {Checkpoint} from "src/dependencies/pendle/VeHistoryLib.sol";
 
 interface IPVotingEscrowMainchain is IPVeToken {
-
     function increaseLockPosition(uint128 additionalAmountToLock, uint128 expiry) external returns (uint128);
 
     function increaseLockPositionAndBroadcast(
