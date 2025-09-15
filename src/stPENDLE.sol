@@ -68,6 +68,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
     event FeesDistributed(uint256 pendleAmount, uint256 usdtAmount);
     event Paused(bool paused);
     event RedemptionExpired(address indexed user, uint256 amount);
+    //test
+    error InvalidPendleBalance();
 
     // errors
     error EpochNotEnded();
@@ -199,6 +201,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
 
         // 4) Advance epoch book-keeping
         vaultPosition.currentEpoch = newEpoch;
+        vaultPosition.currentEpochStart = block.timestamp;
         vaultPosition.lastEpochUpdate = block.timestamp;
         emit NewEpochStarted(newEpoch, block.timestamp, epochDuration);
     }
@@ -406,7 +409,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
     }
 
     function _requireIsWithinRedemptionWindow() internal view {
-        if (block.timestamp > vaultPosition.lastEpochUpdate + vaultPosition.preLockRedemptionPeriod) {
+        if (block.timestamp < vaultPosition.currentEpochStart + vaultPosition.preLockRedemptionPeriod) {
             revert OutsideRedemptionWindow();
         }
     }
@@ -416,8 +419,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
         return block.timestamp / vaultPosition.epochDuration;
     }
 
-    function _updateEpoch() internal {
-        uint256 newEpoch = _calculateEpoch();
+    function _updateEpoch() internal returns (uint256 newEpoch) {
+        newEpoch = _calculateEpoch();
         if (newEpoch > vaultPosition.currentEpoch) {
             vaultPosition.currentEpoch = newEpoch;
             vaultPosition.lastEpochUpdate = block.timestamp;
