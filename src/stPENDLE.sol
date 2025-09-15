@@ -61,8 +61,10 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
     event FeeReceiverSet(address feeReceiver);
     event RedemptionRequested(address indexed user, uint256 amount, uint256 requestTime);
     event RedemptionProcessed(address indexed user, uint256 amount);
-    event EpochUpdated(uint256 newEpoch, uint256 lastEpochUpdate);
+    event EpochUpdated(uint256 newEpoch, uint256 lastEpochUpdate, uint256 additionalTime);
+    event NewEpochStarted(uint256 newEpoch, uint256 lastEpochUpdate, uint256 additionalTime);
     event EpochDurationSet(uint128 duration);
+    event AssetPositionIncreased(uint256 amount, uint256 additionalTime);
     event FeesDistributed(uint256 pendleAmount, uint256 usdtAmount);
     event Paused(bool paused);
     event RedemptionExpired(address indexed user, uint256 amount);
@@ -144,11 +146,13 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
         if (totalAccrued == 0) revert InvalidAmount();
         // will revert if proof or totalAccrued is invalid
         uint256 claimedAmount = merkleDistributor.claim(address(this), totalAccrued, proof);
-
+        vaultPosition.totalPendleUnderManagement += claimedAmount;
         //lock everything claimed back into current escrow epoch
         if (claimedAmount > 0) {
             // lock fees without increasing the lock duration
             votingEscrowMainchain.increaseLockPosition(_safeCast128(claimedAmount), 0);
+            vaultPosition.totalLockedPendle += claimedAmount;
+            emit AssetPositionIncreased(claimedAmount, 0);
         }
     }
 
@@ -181,12 +185,14 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
         if (assetsToLock != 0) {
             votingEscrowMainchain.increaseLockPosition(_safeCast128(assetsToLock), epochDuration);
             vaultPosition.totalLockedPendle += assetsToLock;
+            emit AssetPositionIncreased(assetsToLock, epochDuration);
         }
+       
 
         // 4) Advance epoch book-keeping
         vaultPosition.currentEpoch = newEpoch;
         vaultPosition.lastEpochUpdate = block.timestamp;
-        emit EpochUpdated(newEpoch, block.timestamp);
+        emit NewEpochStarted(newEpoch, block.timestamp, epochDuration);
     }
 
     /**
@@ -194,6 +200,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
      * @param shares Amount of shares to redeem
      */
     function requestRedemptionForEpoch(uint256 shares, uint256 epoch) external nonReentrant whenNotPaused {
+        _updateEpoch();
         if (epoch == 0) {
             epoch = vaultPosition.currentEpoch + 1;
         }
@@ -221,6 +228,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
      * @param shares Amount of shares to claim
      */
     function claimAvailableRedemptionShares(uint256 shares) external nonReentrant whenNotPaused {
+        _updateEpoch();
         if (shares == 0) revert InvalidAmount();
         _requireIsWithinRedemptionWindow();
         // Process redemption requests
