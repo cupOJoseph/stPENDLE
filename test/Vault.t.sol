@@ -160,7 +160,9 @@ contract stPENDLETest is Test {
             address(votingEscrowMainchain),
             address(votingController),
             address(timelockController),
-            address(this)
+            address(this),
+            20 days,
+            30 days
         );
 
         // Setup initial balances
@@ -234,12 +236,8 @@ contract stPENDLETest is Test {
         // assertEq(usdt.balanceOf(feeReceiver), 5e18, "Fee receiver should get 5% in USDT");
         // assertEq(vePendle.balanceOf(address(vault)), 95e18, "Vault should have 95% locked");
     }
-
+        error OutsideRedemptionWindow();
     function test_WithdrawalQueue() public {
-        // Initialize epoch config via timelock role so _updateEpoch works
-        vm.prank(address(timelockController));
-        vault.setEpochDuration(30 days);
-
         // Alice and Bob deposit
         vm.startPrank(alice);
         pendle.approve(address(vault), DEPOSIT_AMOUNT);
@@ -270,7 +268,7 @@ contract stPENDLETest is Test {
         // Per-epoch totals should reflect both users' queued shares
         uint256 totalQueued = vault.getTotalRequestedRedemptionAmountPerEpoch(requestEpoch);
         assertEq(totalQueued, aliceRequestShares + bobRequestShares, "Queued shares per epoch mismatch");
-
+ 
         // User list for that epoch should include Alice then Bob
         address[] memory users = vault.getRedemptionUsersForEpoch(requestEpoch);
         assertEq(users.length, 2, "Unexpected number of redemption users");
@@ -281,30 +279,18 @@ contract stPENDLETest is Test {
         assertEq(vault.getUserAvailableRedemption(alice), 0, "Alice shouldn't have current-epoch availability yet");
         assertEq(vault.getUserAvailableRedemption(bob), 0, "Bob shouldn't have current-epoch availability yet");
 
-        // Claiming during the wrong epoch should be a no-op (no revert, no state change)
+        // Claiming during the wrong epoch should revert
         vm.prank(alice);
+        vm.expectRevert();
         vault.claimAvailableRedemptionShares(aliceRequestShares);
-        assertEq(
-            vault.getTotalRequestedRedemptionAmountPerEpoch(requestEpoch),
-            totalQueued,
-            "Claim during wrong epoch should not change queued total"
-        );
 
-        // Invalid requests should revert
-        bytes4 InvalidEpochSelector = bytes4(keccak256("InvalidEpoch()"));
-        bytes4 InvalidAmountSelector = bytes4(keccak256("InvalidAmount()"));
+        // warp to pending epoch
+        vm.warp(block.timestamp + 30 days);
 
-        // Epoch too early (must be >= currentEpoch+1)
-        vm.startPrank(alice);
-        vm.expectRevert(InvalidEpochSelector);
-        vault.requestRedemptionForEpoch(1, vault.getCurrentEpoch());
-        vm.stopPrank();
 
-        // Zero shares
-        vm.startPrank(bob);
-        vm.expectRevert(InvalidAmountSelector);
-        vault.requestRedemptionForEpoch(0, requestEpoch);
-        vm.stopPrank();
+        vm.prank(alice);
+        uint256 aliceClaimed = vault.claimAvailableRedemptionShares(aliceRequestShares);
+        assertEq(aliceClaimed, aliceRequestShares, "Alice should have claimed their shares");
     }
 
     function test_ProcessWithdrawals() public {

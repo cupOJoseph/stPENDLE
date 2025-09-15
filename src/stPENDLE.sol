@@ -65,6 +65,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
     event NewEpochStarted(uint256 newEpoch, uint256 lastEpochUpdate, uint256 additionalTime);
     event EpochDurationSet(uint128 duration);
     event AssetPositionIncreased(uint256 amount, uint256 currentEpoch,uint256 additionalTime);
+    event FeesClaimed(uint256 amount, uint256 timestamp);
     event FeesDistributed(uint256 pendleAmount, uint256 usdtAmount);
     event Paused(bool paused);
     event RedemptionExpired(address indexed user, uint256 amount);
@@ -97,13 +98,17 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
         address _votingEscrowMainchain,
         address _votingControllerAddress,
         address _timelockController,
-        address _admin
+        address _admin,
+        uint256 _preLockRedemptionPeriod,
+        uint256 _epochDuration
     ) {
         votingEscrowMainchain = IPVotingEscrowMainchain(_votingEscrowMainchain);
         merkleDistributor = IPMerkleDistributor(_merkleDistributorAddress);
         votingController = IPVotingController(_votingControllerAddress);
         ASSET = _pendleTokenAddress;
-        vaultPosition.preLockRedemptionPeriod = 20 days;
+        vaultPosition.preLockRedemptionPeriod = _preLockRedemptionPeriod;
+        vaultPosition.epochDuration = _epochDuration;
+
         _initializeOwner(address(msg.sender));
         _grantRoles(_admin, ADMIN_ROLE);
         _grantRoles(_timelockController, TIMELOCK_CONTROLLER_ROLE);
@@ -145,6 +150,9 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
         if (totalAccrued == 0) revert InvalidAmount();
         // will revert if proof or totalAccrued is invalid
         uint256 amountToLock = merkleDistributor.claim(address(this), totalAccrued, proof);
+
+        emit FeesClaimed(amountToLock, block.timestamp);
+
         vaultPosition.totalPendleUnderManagement += amountToLock;
 
         // if redemption window has closed, lock all remaining PENDLE
@@ -238,12 +246,12 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
      * @dev Can be called by the user to claim their redemption requests
      * @param shares Amount of shares to claim
      */
-    function claimAvailableRedemptionShares(uint256 shares) external nonReentrant whenNotPaused {
+    function claimAvailableRedemptionShares(uint256 shares) external nonReentrant whenNotPaused returns (uint256) {
         _updateEpoch();
         if (shares == 0) revert InvalidAmount();
         _requireIsWithinRedemptionWindow();
         // Process redemption requests
-        _processRedemption(msg.sender, shares);
+        return _processRedemption(msg.sender, shares);
     }
 
     /**
