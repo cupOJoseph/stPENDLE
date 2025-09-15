@@ -11,6 +11,8 @@ import {IPMerkleDistributor} from "src/interfaces/pendle/IPMerkleDistributor.sol
 import {IPVotingEscrowMainchain} from "src/interfaces/pendle/IPVotingEscrowMainchain.sol";
 import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
 
+import {ISTPENDLE} from "src/interfaces/ISTPENDLE.sol";
+
 import {VaultPosition} from "src/dependencies/VaultStructs.sol";
 
 /**
@@ -18,7 +20,7 @@ import {VaultPosition} from "src/dependencies/VaultStructs.sol";
  * @notice Accepts PENDLE deposits and stakes them in vePENDLE for rewards
  * @dev Fully compliant with ERC-4626 tokenized vault standard using Solady
  */
-contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
+contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     using SafeTransferLib for address;
     using FixedPointMathLib for uint256;
 
@@ -54,38 +56,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
     mapping(uint256 epoch => uint256 totalPendingRedemptions) public totalPendingSharesPerEpoch;
     mapping(uint256 epoch => address[] requestedUserRedemptions) public redemptionUsersPerEpoch;
 
-    // events
-    event FeeSwitchSet(bool enabled);
-    event FeeBasisPointsSet(uint256 basisPoints);
-    event LockDurationDefaultSet(uint256 duration);
-    event FeeReceiverSet(address feeReceiver);
-    event RedemptionRequested(address indexed user, uint256 amount, uint256 requestTime);
-    event RedemptionProcessed(address indexed user, uint256 amount);
-    event EpochUpdated(uint256 newEpoch, uint256 lastEpochUpdate);
-    event NewEpochStarted(uint256 newEpoch, uint256 lastEpochUpdate, uint256 additionalTime);
-    event EpochDurationSet(uint128 duration);
-    event AssetPositionIncreased(uint256 amount, uint256 currentEpoch,uint256 additionalTime);
-    event FeesClaimed(uint256 amount, uint256 timestamp);
-    event FeesDistributed(uint256 pendleAmount, uint256 usdtAmount);
-    event Paused(bool paused);
-    event RedemptionExpired(address indexed user, uint256 amount);
-    //test
-    error InvalidPendleBalance();
-
-    // errors
-    error EpochNotEnded();
-    error EpochDurationInvalid();
-    error InvalidAmount();
-    error InsufficientShares();
-    error InvalidRedemptionAmount(uint256 withdrawnAmount, uint256 availableForRedemption);
-    error InvalidFeeBasisPoints();
-    error IsPaused();
-    error OutsideRedemptionWindow();
-    error InvalidRedemption();
-    error InvalidMint();
-    error InsufficientRequestedRedemptionAmount();
-    error InvalidEpoch();
-    error InsufficientRedemptionAmount();
 
     modifier whenNotPaused() {
         _whenNotPaused();
@@ -380,20 +350,20 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
     }
 
     function setFeeReceiver(address _feeReceiver) public onlyRoles(ADMIN_ROLE) {
-        require(_feeReceiver != address(0), "Invalid fee receiver");
+        if (_feeReceiver == address(0)) revert InvalidFeeReceiver(); // 0 address is not allowed
         feeReceiver = _feeReceiver;
         emit FeeReceiverSet(feeReceiver);
     }
 
     function setEpochDuration(uint128 _duration) public onlyRoles(TIMELOCK_CONTROLLER_ROLE) {
-        require(_duration >= 1 days, "Epoch duration too short");
-        require(_duration <= 730 days, "Epoch duration too long");
+        if (_duration < 1 days) revert EpochDurationInvalid();
+        if (_duration > 730 days) revert EpochDurationInvalid();
         vaultPosition.epochDuration = _duration;
         emit EpochDurationSet(_duration);
     }
 
     function setRewardsSplit(uint256 _rewardsSplit) public onlyRoles(TIMELOCK_CONTROLLER_ROLE) {
-        require(_rewardsSplit <= 100, "Rewards split cannot exceed 100%");
+        if (_rewardsSplit > 100) revert InvalidRewardsSplit();
         rewardsSplit = _rewardsSplit;
     }
 
@@ -506,10 +476,14 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
     // ERC 4626 overrides
 
     function redeem(uint256, /*shares */ address, /*to */ address /*owner*/ ) public pure override returns (uint256) {
-        revert InvalidRedemption(); // this should never be called on this contract
+        revert InvalidERC4626Function(); // this should never be called on this contract
     }
 
     function mint(uint256, /*shares*/ address /*to*/ ) public pure override returns (uint256) {
-        revert InvalidMint();
+        revert InvalidERC4626Function();
+    }
+
+    function withdraw(uint256 /*assets*/, address /*to*/, address /*owner*/ ) public pure override returns (uint256) {
+        revert InvalidERC4626Function();
     }
 }
