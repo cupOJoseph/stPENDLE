@@ -61,7 +61,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
     event FeeReceiverSet(address feeReceiver);
     event RedemptionRequested(address indexed user, uint256 amount, uint256 requestTime);
     event RedemptionProcessed(address indexed user, uint256 amount);
-    event EpochUpdated(uint256 newEpoch, uint256 lastEpochUpdate, uint256 additionalTime);
+    event EpochUpdated(uint256 newEpoch, uint256 lastEpochUpdate);
     event NewEpochStarted(uint256 newEpoch, uint256 lastEpochUpdate, uint256 additionalTime);
     event EpochDurationSet(uint128 duration);
     event AssetPositionIncreased(uint256 amount, uint256 additionalTime);
