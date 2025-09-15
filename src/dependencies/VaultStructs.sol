@@ -22,6 +22,5 @@ struct VaultPosition {
     uint256 currentEpoch;
     uint256 epochDuration;
     uint256 lastEpochUpdate;
-    uint256 firstEpochStart;
     uint256 preLockRedemptionPeriod;
 }

@@ -237,25 +237,75 @@ contract stPENDLETest is Test {
     }
 
     function test_WithdrawalQueue() public {
-        // // Setup: Alice deposits and requests withdrawal
-        // vm.startPrank(alice);
+        // Initialize epoch config via timelock role so _updateEpoch works
+        vm.prank(address(timelockController));
+        vault.setEpochDuration(30 days);
 
-        // pendle.approve(address(vault), DEPOSIT_AMOUNT);
-        // vault.deposit(DEPOSIT_AMOUNT, alice);
+        // Alice and Bob deposit
+        vm.startPrank(alice);
+        pendle.approve(address(vault), DEPOSIT_AMOUNT);
+        uint256 aliceShares = vault.deposit(DEPOSIT_AMOUNT, alice);
+        vm.stopPrank();
 
-        // // Request withdrawal
-        // vault.requestWithdrawal(50e18);
+        vm.startPrank(bob);
+        pendle.approve(address(vault), DEPOSIT_AMOUNT);
+        uint256 bobShares = vault.deposit(DEPOSIT_AMOUNT, bob);
+        vm.stopPrank();
 
-        // assertEq(vault.getUserPendingWithdrawal(alice), 50e18, "Should track pending withdrawal");
-        // assertEq(vault.totalPendingWithdrawals(), 50e18, "Total pending should be updated");
+        // Initially, all deposited PENDLE is locked; available for redemption should be 0
+        assertEq(vault.getAvailableRedemptionAmount(), 0, "No unlocked assets initially");
 
-        // vm.stopPrank();
+        // Queue redemptions for the next epoch (epoch=0 aliases to currentEpoch+1)
+        uint256 aliceRequestShares = aliceShares / 2; // partial
+        uint256 bobRequestShares = bobShares; // full
 
-        // // Check withdrawal request details
-        // WithdrawalRequest[] memory requests = vault.getUserWithdrawalRequests(alice);
-        // assertEq(requests.length, 1, "Should have one withdrawal request");
-        // assertEq(requests[0].amount, 50e18, "Request amount should match");
-        // assertEq(requests[0].isProcessed, false, "Request should not be processed yet");
+        vm.prank(alice);
+        vault.requestRedemptionForEpoch(aliceRequestShares, 0);
+
+        vm.prank(bob);
+        vault.requestRedemptionForEpoch(bobRequestShares, 0);
+
+        // Determine the epoch where requests were queued: currentEpoch + 1 (post _updateEpoch inside calls)
+        uint256 requestEpoch = vault.getCurrentEpoch() + 1;
+
+        // Per-epoch totals should reflect both users' queued shares
+        uint256 totalQueued = vault.getTotalRequestedRedemptionAmountPerEpoch(requestEpoch);
+        assertEq(totalQueued, aliceRequestShares + bobRequestShares, "Queued shares per epoch mismatch");
+
+        // User list for that epoch should include Alice then Bob
+        address[] memory users = vault.getRedemptionUsersForEpoch(requestEpoch);
+        assertEq(users.length, 2, "Unexpected number of redemption users");
+        assertEq(users[0], alice, "First redemption user should be Alice");
+        assertEq(users[1], bob, "Second redemption user should be Bob");
+
+        // Before the epoch advances, current-epoch availability for users should be 0
+        assertEq(vault.getUserAvailableRedemption(alice), 0, "Alice shouldn't have current-epoch availability yet");
+        assertEq(vault.getUserAvailableRedemption(bob), 0, "Bob shouldn't have current-epoch availability yet");
+
+        // Claiming during the wrong epoch should be a no-op (no revert, no state change)
+        vm.prank(alice);
+        vault.claimAvailableRedemptionShares(aliceRequestShares);
+        assertEq(
+            vault.getTotalRequestedRedemptionAmountPerEpoch(requestEpoch),
+            totalQueued,
+            "Claim during wrong epoch should not change queued total"
+        );
+
+        // Invalid requests should revert
+        bytes4 InvalidEpochSelector = bytes4(keccak256("InvalidEpoch()"));
+        bytes4 InvalidAmountSelector = bytes4(keccak256("InvalidAmount()"));
+
+        // Epoch too early (must be >= currentEpoch+1)
+        vm.startPrank(alice);
+        vm.expectRevert(InvalidEpochSelector);
+        vault.requestRedemptionForEpoch(1, vault.getCurrentEpoch());
+        vm.stopPrank();
+
+        // Zero shares
+        vm.startPrank(bob);
+        vm.expectRevert(InvalidAmountSelector);
+        vault.requestRedemptionForEpoch(0, requestEpoch);
+        vm.stopPrank();
     }
 
     function test_ProcessWithdrawals() public {

@@ -95,15 +95,12 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
         address _votingEscrowMainchain,
         address _votingControllerAddress,
         address _timelockController,
-        address _admin,
-        uint256 _firstEpochStartTime
+        address _admin
     ) {
         votingEscrowMainchain = IPVotingEscrowMainchain(_votingEscrowMainchain);
         merkleDistributor = IPMerkleDistributor(_merkleDistributorAddress);
         votingController = IPVotingController(_votingControllerAddress);
         ASSET = _pendleTokenAddress;
-        // we anchor the first epoch to the timestamp where we begin the first epoch
-        vaultPosition.firstEpochStart = _firstEpochStartTime;
         vaultPosition.preLockRedemptionPeriod = 20 days;
         _initializeOwner(address(msg.sender));
         _grantRoles(_admin, ADMIN_ROLE);
@@ -342,10 +339,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
         return vaultPosition.lastEpochUpdate;
     }
 
-    function getFirstEpochStart() external view returns (uint256) {
-        return vaultPosition.firstEpochStart;
-    }
-
     function getEpochDuration() external view returns (uint256) {
         return vaultPosition.epochDuration;
     }
@@ -420,7 +413,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
 
 
     function _calculateEpoch() internal view returns (uint256) {
-        return block.timestamp - vaultPosition.firstEpochStart / vaultPosition.epochDuration;
+        return block.timestamp / vaultPosition.epochDuration;
     }
 
     function _updateEpoch() internal {
