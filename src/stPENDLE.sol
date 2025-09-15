@@ -401,6 +401,13 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
         }
     }
 
+    function _requireIsWithinRedemptionWindow() internal view {
+        if (block.timestamp > vaultPosition.lastEpochUpdate + vaultPosition.preLockRedemptionPeriod) {
+            revert OutsideRedemptionWindow();
+        }
+    }
+
+
     function _calculateEpoch() internal view returns (uint256) {
         return block.timestamp - vaultPosition.firstEpochStart / vaultPosition.epochDuration;
     }
@@ -423,12 +430,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
 
     function _getTotalRequestedRedemptionAmountPerEpoch(uint256 epoch) internal view returns (uint256) {
         return totalPendingSharesPerEpoch[epoch];
-    }
-
-    function _requireIsWithinRedemptionWindow() internal view {
-        if (block.timestamp > vaultPosition.lastEpochUpdate + vaultPosition.preLockRedemptionPeriod) {
-            revert OutsideRedemptionWindow();
-        }
     }
 
     function _processRedemption(address user, uint256 shares) internal returns (uint256) {
@@ -481,11 +482,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
 
     // ERC 4626 overrides
 
-    function redeem(uint256, /*shares */ address, /*to */ address /*owner*/ ) public override returns (uint256) {
+    function redeem(uint256, /*shares */ address, /*to */ address /*owner*/ ) public pure override returns (uint256) {
         revert InvalidRedemption(); // this should never be called on this contract
     }
 
-    function mint(uint256, /*shares*/ address /*to*/ ) public override returns (uint256) {
+    function mint(uint256, /*shares*/ address /*to*/ ) public pure override returns (uint256) {
         revert InvalidMint();
     }
 }
