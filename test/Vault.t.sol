@@ -210,11 +210,11 @@ contract stPENDLETest is Test {
         vault.setFeeBasisPoints(500); // 5%
 
         // Claim fees
-        vault.claimFees();
+        vault.claimFees(100e18, new bytes32[](0));
 
         // Check that fee was distributed in PENDLE
         assertEq(pendle.balanceOf(feeReceiver), 5e18, "Fee receiver should get 5% in PENDLE");
-        assertEq(vePendle.balanceOf(address(vault)), 95e18, "Vault should have 95% locked");
+        assertEq(votingEscrowMainchain.balanceOf(address(vault)), 95e18, "Vault should have 95% locked");
     }
 
     function test_ClaimFeesInUSDT() public {
