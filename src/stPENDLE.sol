@@ -120,18 +120,18 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard {
         return vaultPosition.totalPendleUnderManagement;
     }
 
-    /// @dev Deposit PENDLE into the vault and stake it in vePENDLE
+    /// @dev Deposit PENDLE into the vault and stake it directly in vePENDLE
     function deposit(uint256 amount, address receiver) public override whenNotPaused returns (uint256) {
-        uint256 shares = super.deposit(amount, receiver);
+        uint256 sharesMinted = super.deposit(amount, receiver);
         // update vault position
         vaultPosition.totalPendleUnderManagement += amount;
         vaultPosition.totalLockedPendle += amount;
-        uint128 castedAmount = _safeCast128(amount);
+        
         // increase lock position in vePENDLE
-        SafeTransferLib.safeApprove(address(asset()), address(votingEscrowMainchain), castedAmount);
-        votingEscrowMainchain.increaseLockPosition(castedAmount, 0);
+        SafeTransferLib.safeApprove(address(asset()), address(votingEscrowMainchain), amount);
+        votingEscrowMainchain.increaseLockPosition(_safeCast128(amount), 0);
 
-        return shares;
+        return sharesMinted;
     }
 
     /**
