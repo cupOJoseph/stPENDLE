@@ -158,6 +158,7 @@ contract stPENDLETest is Test {
             address(votingEscrowMainchain),
             address(votingController),
             address(timelockController),
+            address(this),
             block.timestamp + 1 hours
             );
         

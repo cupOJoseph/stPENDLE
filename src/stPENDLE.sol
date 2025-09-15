@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {ERC4626} from "lib/solady/src/tokens/ERC4626.sol";
-import {Ownable} from "lib/solady/src/auth/Ownable.sol";
+import {OwnableRoles} from "lib/solady/src/auth/OwnableRoles.sol";
 import {SafeTransferLib} from "lib/solady/src/utils/SafeTransferLib.sol";
 import {ReentrancyGuard} from "lib/solady/src/utils/ReentrancyGuard.sol";
 import {FixedPointMathLib} from "lib/solady/src/utils/FixedPointMathLib.sol";
@@ -18,11 +18,13 @@ import {VaultPosition} from "src/dependencies/VaultStructs.sol";
  * @notice Accepts PENDLE deposits and stakes them in vePENDLE for rewards
  * @dev Fully compliant with ERC-4626 tokenized vault standard using Solady
  */
-contract stPENDLE is ERC4626, Ownable, ReentrancyGuard { 
-
+contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard { 
     using SafeTransferLib for address;
     using FixedPointMathLib for uint256;
     
+    uint256 public constant ADMIN_ROLE = _ROLE_0;
+    uint256 public constant TIMELOCK_CONTROLLER_ROLE = _ROLE_1;
+
     // interfaces
     IPMerkleDistributor public merkleDistributor;
     IPVotingEscrowMainchain public votingEscrowMainchain;
@@ -84,7 +86,7 @@ contract stPENDLE is ERC4626, Ownable, ReentrancyGuard {
         _;
     }
 
-    constructor(address _pendleTokenAddress, address _merkleDistributorAddress, address _votingEscrowMainchain, address _votingControllerAddress, address _timelockController, uint256 _firstEpochStartTime) {
+    constructor(address _pendleTokenAddress, address _merkleDistributorAddress, address _votingEscrowMainchain, address _votingControllerAddress, address _timelockController, address _admin, uint256 _firstEpochStartTime) {
         votingEscrowMainchain = IPVotingEscrowMainchain(_votingEscrowMainchain);
         merkleDistributor = IPMerkleDistributor(_merkleDistributorAddress);
         votingController = IPVotingController(_votingControllerAddress);
@@ -92,7 +94,10 @@ contract stPENDLE is ERC4626, Ownable, ReentrancyGuard {
         // we anchor the first epoch to the timestamp where we begin the first epoch
         vaultPosition.firstEpochStart = _firstEpochStartTime;
         vaultPosition.preLockRedemptionPeriod = 20 days;
-        _setOwner(_timelockController);
+        _initializeOwner(address(msg.sender));
+        _grantRoles(_admin, ADMIN_ROLE);
+        _grantRoles(_timelockController, TIMELOCK_CONTROLLER_ROLE);
+        transferOwnership(_admin);
     }
     
     /// @dev Returns the address of the underlying asset
@@ -331,31 +336,31 @@ contract stPENDLE is ERC4626, Ownable, ReentrancyGuard {
 
 
 
-    function setFeeSwitch(bool enabled) public onlyOwner {
+    function setFeeSwitch(bool enabled) public onlyRoles(ADMIN_ROLE) {
         feeSwitchIsEnabled = enabled;
         emit FeeSwitchSet(enabled);
     }
 
-    function setFeeBasisPoints(uint basisPoints) public onlyOwner {
+    function setFeeBasisPoints(uint basisPoints) public onlyRoles(ADMIN_ROLE) {
         if(basisPoints > 1000) revert InvalidFeeBasisPoints();
         feeBasisPoints = basisPoints;
         emit FeeBasisPointsSet(basisPoints);
     }
     
-    function setFeeReceiver(address _feeReceiver) public onlyOwner {
+    function setFeeReceiver(address _feeReceiver) public onlyRoles(ADMIN_ROLE) {
         require(_feeReceiver != address(0), "Invalid fee receiver");
         feeReceiver = _feeReceiver;
         emit FeeReceiverSet(feeReceiver);
     }
     
-    function setEpochDuration(uint128 _duration) public onlyOwner {
+    function setEpochDuration(uint128 _duration) public onlyRoles(TIMELOCK_CONTROLLER_ROLE) {
         require(_duration >= 1 days, "Epoch duration too short");
         require(_duration <= 730 days, "Epoch duration too long");
         vaultPosition.epochDuration = _duration;
         emit EpochDurationSet(_duration);
     }
 
-    function setRewardsSplit(uint256 _rewardsSplit) public onlyOwner {
+    function setRewardsSplit(uint256 _rewardsSplit) public onlyRoles(TIMELOCK_CONTROLLER_ROLE) {
         require(_rewardsSplit <= 100, "Rewards split cannot exceed 100%");
         rewardsSplit = _rewardsSplit;
     }
