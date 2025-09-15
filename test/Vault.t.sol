@@ -157,8 +157,8 @@ contract stPENDLETest is Test {
             address(merkleDistributor),
             address(votingEscrowMainchain),
             address(votingController),
-            address(timelockController)
-
+            address(timelockController),
+            block.timestamp + 1 hours
             );
         
         // Setup initial balances
