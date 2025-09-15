@@ -131,7 +131,10 @@ contract stPENDLETest is Test {
 
     address public alice = address(0x1);
     address public bob = address(0x2);
-    address public feeReceiver = address(0x3);
+    address public charlie = address(0x3);
+    address public david = address(0x4);
+    address public eve = address(0x5);
+    address public feeReceiver = address(0x6);
 
     uint256 public constant INITIAL_BALANCE = 1000e18;
     uint256 public constant DEPOSIT_AMOUNT = 100e18;
@@ -169,6 +172,9 @@ contract stPENDLETest is Test {
         // Setup initial balances
         pendle.mint(alice, INITIAL_BALANCE);
         pendle.mint(bob, INITIAL_BALANCE);
+        pendle.mint(charlie, INITIAL_BALANCE);
+        pendle.mint(david, INITIAL_BALANCE);
+        pendle.mint(eve, INITIAL_BALANCE);
         usdt.mint(address(vault), INITIAL_BALANCE);
 
         // Setup fee receiver
@@ -179,8 +185,14 @@ contract stPENDLETest is Test {
         vm.label(address(merkleDistributor), "MerkleDistributor");
         vm.label(address(usdt), "USDT");
         vm.label(address(pendle), "PENDLE");
+        vm.label(address(votingEscrowMainchain), "VotingEscrowMainchain");
+        vm.label(address(votingController), "VotingController");
+        vm.label(address(timelockController), "TimelockController");
         vm.label(alice, "Alice");
         vm.label(bob, "Bob");
+        vm.label(charlie, "Charlie");
+        vm.label(david, "David");
+        vm.label(eve, "Eve");
         vm.label(feeReceiver, "FeeReceiver");
     }
 
@@ -216,28 +228,13 @@ contract stPENDLETest is Test {
 
         // Check that fee was distributed in PENDLE
         // assertEq(pendle.balanceOf(feeReceiver), 5e18, "Fee receiver should get 5% in PENDLE");
+        uint256 totalPendleUnderManagement = vault.totalPendleUnderManagement();
+        uint256 totalPendleLocked = vault.totalLockedPendle();
+        assertEq(totalPendleLocked, 100e18, "Vault should have 100% locked");
+        assertEq(totalPendleUnderManagement, 100e18, "Vault should have 100% locked");
         assertEq(votingEscrowMainchain.balanceOf(address(vault)), 100e18, "Vault should have 95% locked");
     }
 
-    function test_ClaimFeesInUSDT() public {
-        // // Setup claimable fees
-        // merkleDistributor.setClaimable(address(vault), 100e18);
-
-        // // Enable fees and set USDT
-        // vault.setFeeSwitch(true);
-        // vault.setFeeBasisPoints(500); // 5%
-        // vault.setUseUSDTForFees(true);
-
-        // // Claim fees
-        // vault.claimFees();
-
-        // // Check that fee was distributed in USDT
-        // // Note: The current implementation has a placeholder conversion
-        // // In production, this would use actual DEX integration
-        // assertEq(usdt.balanceOf(feeReceiver), 5e18, "Fee receiver should get 5% in USDT");
-        // assertEq(vePendle.balanceOf(address(vault)), 95e18, "Vault should have 95% locked");
-    }
-        error OutsideRedemptionWindow();
     function test_WithdrawalQueue() public {
         // Alice and Bob deposit
         vm.startPrank(alice);
@@ -264,14 +261,14 @@ contract stPENDLETest is Test {
         vault.requestRedemptionForEpoch(bobRequestShares, 0);
 
         // Determine the epoch where requests were queued: currentEpoch + 1 (post _updateEpoch inside calls)
-        uint256 requestEpoch = vault.getCurrentEpoch() + 1;
+        uint256 requestEpoch = vault.currentEpoch() + 1;
 
         // Per-epoch totals should reflect both users' queued shares
         uint256 totalQueued = vault.getTotalRequestedRedemptionAmountPerEpoch(requestEpoch);
         assertEq(totalQueued, aliceRequestShares + bobRequestShares, "Queued shares per epoch mismatch");
  
         // User list for that epoch should include Alice then Bob
-        address[] memory users = vault.getRedemptionUsersForEpoch(requestEpoch);
+        address[] memory users = vault.redemptionUsersForEpoch(requestEpoch);
         assertEq(users.length, 2, "Unexpected number of redemption users");
         assertEq(users[0], alice, "First redemption user should be Alice");
         assertEq(users[1], bob, "Second redemption user should be Bob");
@@ -295,56 +292,15 @@ contract stPENDLETest is Test {
     }
 
     function test_ProcessWithdrawals() public {
-        // // Setup: Alice deposits and requests withdrawal
-        // vm.startPrank(alice);
-
-        // pendle.approve(address(vault), DEPOSIT_AMOUNT);
-        // vault.deposit(DEPOSIT_AMOUNT, alice);
-        // vault.requestWithdrawal(50e18);
-
-        // vm.stopPrank();
-
-        // // Fast forward to next epoch
-        // vm.warp(block.timestamp + 1 days);
-
-        // // Process withdrawals
-        // vault.processWithdrawals();
-
-        // // Check that withdrawal was processed
-        // assertEq(vault.getUserPendingWithdrawal(alice), 0, "Pending withdrawal should be cleared");
-        // assertEq(vault.totalPendingWithdrawals(), 0, "Total pending should be cleared");
-
-        // // Check withdrawal request status
-        // WithdrawalRequest[] memory requests = vault.getUserWithdrawalRequests(alice);
-        // assertEq(requests[0].isProcessed, true, "Request should be marked as processed");
+        
     }
 
-    function test_RelockPendle() public {
-        // // Setup: Alice deposits
-        // vm.startPrank(alice);
-
-        // pendle.approve(address(vault), DEPOSIT_AMOUNT);
-        // vault.deposit(DEPOSIT_AMOUNT, alice);
-
-        // // Request and process withdrawal
-        // vault.requestWithdrawal(50e18);
-
-        // vm.stopPrank();
-
-        // // Fast forward and process withdrawal
-        // vm.warp(block.timestamp + 1 days);
-        // vault.processWithdrawals();
-
-        // // Alice now has PENDLE, let's re-lock it
-        // vm.startPrank(alice);
-
-        // pendle.approve(address(vault), 50e18);
-        // uint256 newShares = vault.relockPendle(50e18, 30 days);
-
-        // assertGt(newShares, 0, "Should receive new shares");
-        // assertEq(vePendle.balanceOf(address(vault)), 100e18, "Vault should have all PENDLE locked");
-
-        // vm.stopPrank();
+    function test_startFirstEpoch() public {
+        vault.startFirstEpoch();
+        assertEq(vault.currentEpoch(), 1, "Should have started first epoch");
+        assertEq(vault.totalPendleUnderManagement(), INITIAL_BALANCE, "Should have all PENDLE locked");
+        assertEq(vault.totalLockedPendle(), INITIAL_BALANCE, "Should have all PENDLE locked");
+        assertEq(votingEscrowMainchain.balanceOf(address(vault)), INITIAL_BALANCE, "Should have all PENDLE locked");
     }
 
     function test_GetNextEpochWithdrawalAmount() public {

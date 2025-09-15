@@ -16,7 +16,7 @@ Token and vault contract for institutional grade vePENDLE liquid staking.
 - **Redemption window**: During each epoch, there is a window defined by `preLockRedemptionPeriod` when redemptions can be processed/claimed. Outside the window, claims return 0.
 - **Processing**: Anyone can batch process the current epoch with `processRedemptions()` (withdraws unlocked PENDLE from vePENDLE and fulfills requests FIFO). Users can self-claim with `claimAvailableRedemptionShares(uint256 shares)` during the window.
 - **Liquidity and epochs**: On `startNewEpoch()`, the vault advances the epoch, withdraws matured vePENDLE, reserves assets for pending redemptions of the new epoch, and re-locks remaining assets for `epochDuration`.
-- **Observability**: `getUserAvailableRedemption(address)`, `getTotalRequestedRedemptionAmountPerEpoch(uint256)`, `getRedemptionUsersForEpoch(uint256)`, `getAvailableRedemptionAmount()`, and `previewVeWithdraw()` expose queue and liquidity state.
+- **Observability**: `getUserAvailableRedemption(address)`, `getTotalRequestedRedemptionAmountPerEpoch(uint256)`, `redemptionUsersForEpoch(uint256)`, `getAvailableRedemptionAmount()`, and `previewVeWithdraw()` expose queue and liquidity state.
 - **ERC-4626 overrides**: Direct `redeem` and `mint` are disabled (revert). Use the queue flow above.
 
 ## Dev Instructions 
