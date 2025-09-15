@@ -3,4 +3,7 @@ src = "src"
 out = "out"
 libs = ["lib"]
 
+
+[lint]
+ignore = ["src/dependencies/*/*", "src/interfaces/pendle/*", "test/*"]
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

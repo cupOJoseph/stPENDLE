@@ -2,10 +2,11 @@
 pragma solidity ^0.8.0;
 
 import {Script} from "lib/forge-std/src/Script.sol";
-import {xPENDLE} from "../src/XPENDLE.sol";
+// import {stPENDLE} from "src/stPENDLE.sol";
 
-contract XPendleDeploy is Script {
+contract stPendleDeploy is Script {
     function run() public {
+        /*
         vm.createSelectFork("https://rpc.ankr.com/eth");
 
         address merkleDistributor = 0x0000000000000000000000000000000000000000;
@@ -14,9 +15,10 @@ contract XPendleDeploy is Script {
         address vault = 0x0000000000000000000000000000000000000000;
         address usdt = 0xdAC17F958D2ee523a2206206994597C13D831ec7; // USDT on Ethereum mainnet
 
-        new xPENDLE(merkleDistributor, vePENDLE, votingController, usdt);
+        // new stPENDLE(merkleDistributor, vePENDLE, votingController, usdt);
 
         vm.startBroadcast();
         vm.stopBroadcast();
+        */
     }
 }
