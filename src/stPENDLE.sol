@@ -268,13 +268,14 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
 
     /**
      * @notice Get user's pending redemption amount for the current epoch
+     * @dev Will return 0 if redemption window has closed or if a new epoch has not been started
      * @param user Address of the user
      * @return Total pending redemption shares for the user in the current epoch
      */
-    function getUserAvailableRedemption(address user) public returns (uint256) {
+    function getUserAvailableRedemption(address user) public view returns (uint256) {
         // if redemption window has closed, return 0
         if (!_isWithinRedemptionWindow()) return 0;
-        _updateEpoch();
+        if (_calculateEpoch(block.timestamp) != _vaultPosition.currentEpoch) return 0;
         uint256 pendingRedemptionShares = pendingRedemptionSharesPerEpoch[user][_vaultPosition.currentEpoch];
         return pendingRedemptionShares;
     }
