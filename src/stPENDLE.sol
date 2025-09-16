@@ -377,7 +377,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     }
 
     function _updateEpoch() internal returns (uint256 newEpoch) {
-        newEpoch = _calculateEpoch();
+        newEpoch = _calculateEpoch(block.timestamp);
         if (newEpoch > _vaultPosition.currentEpoch) {
             _vaultPosition.currentEpoch = newEpoch;
             _vaultPosition.lastEpochUpdate = block.timestamp;

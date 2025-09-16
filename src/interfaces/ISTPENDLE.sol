@@ -21,7 +21,6 @@ interface ISTPENDLE {
     function startNewEpoch() external;
     function requestRedemptionForEpoch(uint256 shares, uint256 epoch) external;
     function claimAvailableRedemptionShares(uint256 shares) external returns (uint256 assetsRedeemed);
-    function processRedemptions() external;
 
     // -------- Redemption queue  --------
     function previewVeWithdraw() external view returns (uint256);
