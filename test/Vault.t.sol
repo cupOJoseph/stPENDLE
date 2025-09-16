@@ -9,7 +9,6 @@ import {IPVotingEscrowMainchain} from "src/interfaces/pendle/IPVotingEscrowMainc
 import {IPVeToken} from "src/interfaces/pendle/IPVeToken.sol";
 import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
 import {ISTPENDLE} from "src/interfaces/ISTPENDLE.sol";
-import {VaultPosition, UserPosition, WithdrawalRequest} from "src/dependencies/VaultStructs.sol";
 import {IERC20} from "lib/forge-std/src/interfaces/IERC20.sol";
 
 /// forge-lint: disable-start(all)
