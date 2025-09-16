@@ -19,10 +19,15 @@ contract MockVotingEscrowMainchain {
     mapping(address => uint128) public lockedBalances;
     mapping(address => uint128) public unlockTimes;
     uint128 public totalSupply;
+    MockPENDLE public pendle;
 
-    constructor() {}
+    constructor(MockPENDLE _pendle) {
+        pendle = _pendle;
+    }
 
     function increaseLockPosition(uint128 additionalAmountToLock, uint128 expiry) external returns (uint128) {
+        require(additionalAmountToLock > 0, "Additional amount to lock must be greater than 0");
+       pendle.transferFrom(msg.sender, address(this), additionalAmountToLock);
         balances[msg.sender] += additionalAmountToLock;
         lockedBalances[msg.sender] += additionalAmountToLock;
         unlockTimes[msg.sender] = expiry;
@@ -159,7 +164,7 @@ contract stPENDLETest is Test {
         // Deploy mock contracts
         merkleDistributor = new MockMerkleDistributor(pendle);
         votingController = new MockVotingController();
-        votingEscrowMainchain = new MockVotingEscrowMainchain();
+        votingEscrowMainchain = new MockVotingEscrowMainchain(pendle);
         address[] memory proposers = new address[](1);
         address[] memory executors = new address[](1);
         proposers[0] = address(this);
@@ -256,6 +261,7 @@ contract stPENDLETest is Test {
     }
 
     function test_WithdrawalQueue() public {
+        startFirstEpoch();
         // Alice and Bob deposit
         vm.startPrank(alice);
         pendle.approve(address(vault), DEPOSIT_AMOUNT);
