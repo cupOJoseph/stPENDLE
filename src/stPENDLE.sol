@@ -231,40 +231,41 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         // Process redemption requests
         return _processRedemption(msg.sender, shares);
     }
+    
+    // TODO: if we want to process redemptions for everyone we have to transfer shares to the vault when redemption is requested
+    // /**
+    //  * @notice Process redemption requests for the current epoch can be called by any kind user who wants to pay for everyone's redemption gas
+    //  * @dev Can be called by anyone to process pending redemptions
+    //  */
+    // function processRedemptions() external nonReentrant whenNotPaused {
+    //     _updateEpoch();
+    //     // Only allow processing in day 0-20 of the current epoch
+    //     _requireIsWithinRedemptionWindow();
 
-    /**
-     * @notice Process redemption requests for the current epoch can be called by any kind user who wants to pay for everyone's redemption gas
-     * @dev Can be called by anyone to process pending redemptions
-     */
-    function processRedemptions() external nonReentrant whenNotPaused {
-        _updateEpoch();
-        // Only allow processing in day 0-20 of the current epoch
-        _requireIsWithinRedemptionWindow();
+    //     uint256 availableForRedemption = _getAvailableRedemptionAmount();
+    //     uint256 totalPendingRedemptions = totalPendingSharesPerEpoch[_vaultPosition.currentEpoch];
+    //     if (availableForRedemption < totalPendingRedemptions) {
+    //         revert InvalidRedemptionAmount(totalPendingRedemptions, availableForRedemption);
+    //     }
+    //     // withdraw from voting escrow
+    //     uint256 withdrawnAmount = votingEscrowMainchain.withdraw();
+    //     if (withdrawnAmount < availableForRedemption) {
+    //         revert InvalidRedemptionAmount(withdrawnAmount, availableForRedemption);
+    //     }
+    //     // Process redemption requests in FIFO order
+    //     address[] memory users = redemptionUsersPerEpoch[_vaultPosition.currentEpoch];
 
-        uint256 availableForRedemption = _getAvailableRedemptionAmount();
-        uint256 totalPendingRedemptions = totalPendingSharesPerEpoch[_vaultPosition.currentEpoch];
-        if (availableForRedemption < totalPendingRedemptions) {
-            revert InvalidRedemptionAmount(totalPendingRedemptions, availableForRedemption);
-        }
-        // withdraw from voting escrow
-        uint256 withdrawnAmount = votingEscrowMainchain.withdraw();
-        if (withdrawnAmount < availableForRedemption) {
-            revert InvalidRedemptionAmount(withdrawnAmount, availableForRedemption);
-        }
-        // Process redemption requests in FIFO order
-        address[] memory users = redemptionUsersPerEpoch[_vaultPosition.currentEpoch];
+    //     for (uint256 i = 0; i < users.length; i++) {
+    //         address user = users[i];
+    //         uint256 userRedemptionShares = pendingRedemptionSharesPerEpoch[user][_vaultPosition.currentEpoch];
 
-        for (uint256 i = 0; i < users.length; i++) {
-            address user = users[i];
-            uint256 userRedemptionShares = pendingRedemptionSharesPerEpoch[user][_vaultPosition.currentEpoch];
-
-            if (userRedemptionShares > 0) {
-                uint256 amountRedeemed = _processRedemption(user, userRedemptionShares);
-                availableForRedemption -= amountRedeemed;
-                if (availableForRedemption == 0) break;
-            }
-        }
-    }
+    //         if (userRedemptionShares > 0) {
+    //             uint256 amountRedeemed = _processRedemption(user, userRedemptionShares);
+    //             availableForRedemption -= amountRedeemed;
+    //             if (availableForRedemption == 0) break;
+    //         }
+    //     }
+    // }
 
     /// ============ View Functions ================ ///
 
@@ -438,12 +439,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         // assert that the user has enough pending redemption shares
         if (currentPendingRedemptionShares < shares) revert InsufficientShares();
 
-        // 1:1 redemption: shares map directly to PENDLE units
-        uint256 pendleToReceive = shares;
-
-        // assert that vault has enough balance
-        if (SafeTransferLib.balanceOf(address(asset()), address(this)) < pendleToReceive) revert InsufficientBalance();
-
         // Update pending amounts
         pendingRedemptionSharesPerEpoch[user][_vaultPosition.currentEpoch] -= shares;
         totalPendingSharesPerEpoch[_vaultPosition.currentEpoch] -= shares;
@@ -451,8 +446,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         // redeem shares
         uint256 amountRedeemed = super.redeem(shares, user, user);
 
-        if (amountRedeemed != pendleToReceive) revert InvalidRedemption();
-        emit RedemptionProcessed(user, pendleToReceive);
+        if (amountRedeemed != shares) revert InvalidRedemption();
+        emit RedemptionProcessed(user, shares);
 
         return amountRedeemed;
     }
