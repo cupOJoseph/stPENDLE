@@ -253,7 +253,7 @@ contract stPENDLETest is Test {
 
         // Check that fee was distributed in PENDLE
         // assertEq(pendle.balanceOf(feeReceiver), 5e18, "Fee receiver should get 5% in PENDLE");
-        uint256 totalPendleUnderManagement = vault.totalPendleUnderManagement();
+        uint256 totalPendleUnderManagement = vault.totalSupply();
         uint256 totalPendleLocked = vault.totalLockedPendle();
         assertEq(totalPendleLocked, 100e18, "Vault should have 100% locked");
         assertEq(totalPendleUnderManagement, 100e18, "Vault should have 100% locked");
@@ -321,7 +321,7 @@ contract stPENDLETest is Test {
     function test_startFirstEpoch() public {
         vault.startFirstEpoch();
         assertEq(vault.currentEpoch(), 1, "Should have started first epoch");
-        assertEq(vault.totalPendleUnderManagement(), INITIAL_BALANCE, "Should have all PENDLE locked");
+        assertEq(vault.totalSupply(), INITIAL_BALANCE, "Should have all PENDLE locked");
         assertEq(vault.totalLockedPendle(), INITIAL_BALANCE, "Should have all PENDLE locked");
         assertEq(votingEscrowMainchain.balanceOf(address(vault)), INITIAL_BALANCE, "Should have all PENDLE locked");
     }

@@ -8,7 +8,6 @@ import {IERC4626} from "lib/forge-std/src/interfaces/IERC4626.sol";
 
 interface ISTPENDLE {
     struct VaultPosition {
-        uint256 totalPendleUnderManagement;
         uint256 totalLockedPendle;
         uint256 currentEpoch;
         uint128 epochDuration;
@@ -45,7 +44,6 @@ interface ISTPENDLE {
     function rewardsSplit() external view returns (uint256);
     function epochDuration() external view returns (uint128);
     function preLockRedemptionPeriod() external view returns (uint256);
-    function totalPendleUnderManagement() external view returns (uint256);
     function totalLockedPendle() external view returns (uint256);
     function currentEpoch() external view returns (uint256);
     function lastEpochUpdate() external view returns (uint256);
