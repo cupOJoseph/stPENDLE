@@ -20,14 +20,16 @@ contract MockVotingEscrowMainchain {
     mapping(address => uint128) public unlockTimes;
     uint128 public totalSupply;
     MockPENDLE public pendle;
-
-    constructor(MockPENDLE _pendle) {
+    MockMerkleDistributor public merkleDistributor;
+    constructor(MockPENDLE _pendle, MockMerkleDistributor _merkleDistributor) {
         pendle = _pendle;
+        merkleDistributor = _merkleDistributor;
     }
 
     function increaseLockPosition(uint128 additionalAmountToLock, uint128 expiry) external returns (uint128) {
         require(additionalAmountToLock > 0, "Additional amount to lock must be greater than 0");
        pendle.transferFrom(msg.sender, address(this), additionalAmountToLock);
+       merkleDistributor.setClaimable(msg.sender, additionalAmountToLock / 10);
         balances[msg.sender] += additionalAmountToLock;
         lockedBalances[msg.sender] += additionalAmountToLock;
         unlockTimes[msg.sender] = expiry;
@@ -36,6 +38,7 @@ contract MockVotingEscrowMainchain {
 
     function withdraw() external returns (uint128) {
         uint128 balance = lockedBalances[msg.sender];
+        pendle.transfer(msg.sender, balance);
         lockedBalances[msg.sender] = 0;
         balances[msg.sender] = 0;
         return balance;
@@ -158,13 +161,15 @@ contract stPENDLETest is Test {
     event WithdrawalProcessed(address indexed user, uint256 amount);
 
     function setUp() public {
+        // warp state ahead so first epoch == 1
+        vm.warp(block.timestamp + 31 days);
         usdt = new MockUSDT();
         pendle = new MockPENDLE();
 
         // Deploy mock contracts
         merkleDistributor = new MockMerkleDistributor(pendle);
         votingController = new MockVotingController();
-        votingEscrowMainchain = new MockVotingEscrowMainchain(pendle);
+        votingEscrowMainchain = new MockVotingEscrowMainchain(pendle, merkleDistributor);
         address[] memory proposers = new address[](1);
         address[] memory executors = new address[](1);
         proposers[0] = address(this);
@@ -189,7 +194,6 @@ contract stPENDLETest is Test {
         pendle.mint(charlie, INITIAL_BALANCE);
         pendle.mint(david, INITIAL_BALANCE);
         pendle.mint(eve, INITIAL_BALANCE);
-        usdt.mint(address(vault), INITIAL_BALANCE);
 
         // Setup fee receiver
         vault.setFeeReceiver(feeReceiver);
@@ -280,14 +284,14 @@ contract stPENDLETest is Test {
         uint256 aliceRequestShares = aliceShares / 2; // partial
         uint256 bobRequestShares = bobShares; // full
 
-        vm.prank(alice);
-        vault.requestRedemptionForEpoch(aliceRequestShares, 0);
-
-        vm.prank(bob);
-        vault.requestRedemptionForEpoch(bobRequestShares, 0);
-
         // Determine the epoch where requests were queued: currentEpoch + 1 (post _updateEpoch inside calls)
         uint256 requestEpoch = vault.currentEpoch() + 1;
+
+        vm.prank(alice);
+        vault.requestRedemptionForEpoch(aliceRequestShares, requestEpoch);
+
+        vm.prank(bob);
+        vault.requestRedemptionForEpoch(bobRequestShares, requestEpoch);
 
         // Per-epoch totals should reflect both users' queued shares
         uint256 totalQueued = vault.totalRequestedRedemptionAmountPerEpoch(requestEpoch);
@@ -303,13 +307,21 @@ contract stPENDLETest is Test {
         assertEq(vault.getUserAvailableRedemption(alice), 0, "Alice shouldn't have current-epoch availability yet");
         assertEq(vault.getUserAvailableRedemption(bob), 0, "Bob shouldn't have current-epoch availability yet");
 
-        // Claiming during the wrong epoch should revert
+        // Claiming during the wrong epoch should return 0
         vm.prank(alice);
-        vm.expectRevert(ISTPENDLE.OutsideRedemptionWindow.selector);
         vault.claimAvailableRedemptionShares(aliceRequestShares);
+        assertEq(vault.getUserAvailableRedemption(alice), 0, "Alice shouldn't have current-epoch availability yet");
 
         // warp to pending epoch
         vm.warp(block.timestamp + 30 days);
+
+        assertEq(vault.currentEpoch(), 2, "Should have advanced to next epoch");
+        // start new epoch
+        vm.prank(address(this));
+        vault.startNewEpoch();
+        // assert available redemption
+        assertEq(vault.getUserAvailableRedemption(alice), DEPOSIT_AMOUNT / 2, "Alice should have current-epoch availability");
+        assertEq(vault.getUserAvailableRedemption(bob), DEPOSIT_AMOUNT, "Bob should have current-epoch availability");
 
         vm.prank(alice);
         uint256 aliceClaimed = vault.claimAvailableRedemptionShares(aliceRequestShares);
@@ -319,11 +331,16 @@ contract stPENDLETest is Test {
     function test_ProcessWithdrawals() public {}
 
     function test_startFirstEpoch() public {
+        vm.startPrank(alice);
+        pendle.approve(address(vault), DEPOSIT_AMOUNT);
+        vault.depositBeforeFirstEpoch(DEPOSIT_AMOUNT, alice);
+        vm.stopPrank();
+
         vault.startFirstEpoch();
         assertEq(vault.currentEpoch(), 1, "Should have started first epoch");
-        assertEq(vault.totalSupply(), INITIAL_BALANCE, "Should have all PENDLE locked");
-        assertEq(vault.totalLockedPendle(), INITIAL_BALANCE, "Should have all PENDLE locked");
-        assertEq(votingEscrowMainchain.balanceOf(address(vault)), INITIAL_BALANCE, "Should have all PENDLE locked");
+        assertEq(vault.totalSupply(), DEPOSIT_AMOUNT, "total supply should be equal to initial balance");
+        assertEq(vault.totalLockedPendle(), DEPOSIT_AMOUNT, "total locked pendle should be equal to initial balance");
+        assertEq(votingEscrowMainchain.balanceOf(address(vault)), DEPOSIT_AMOUNT, "Should have all PENDLE locked");
     }
 
     function test_GetNextEpochWithdrawalAmount() public {

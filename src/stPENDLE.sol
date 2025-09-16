@@ -167,14 +167,15 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
      * @dev Will revert if epoch is not ended
      */
     function startNewEpoch() external whenNotPaused nonReentrant {
+        if(_vaultPosition.currentEpochStart + _vaultPosition.epochDuration > block.timestamp) revert InvalidEpoch();
         uint256 newEpoch = _updateEpoch();
-        if (newEpoch <= _vaultPosition.currentEpoch) revert InvalidEpoch();
-
+        
         // 1) Claim matured vePENDLE
-        uint256 claimed = uint256(votingEscrowMainchain.withdraw());
+        uint256(votingEscrowMainchain.withdraw());
         _vaultPosition.totalLockedPendle = 0;
 
         uint256 totalPendleBalance = SafeTransferLib.balanceOf(address(asset()), address(this));
+
         // 2) Reserve assets for redemptions in the new epoch
         uint256 pendingShares = totalPendingSharesPerEpoch[newEpoch]; // tracked in shares
         uint256 reserveAssets = 0;
@@ -202,27 +203,20 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
      * @notice Request a redeem shares for PENDLE from the vault
      * @param shares Amount of shares to redeem
      */
-    function requestRedemptionForEpoch(uint256 shares, uint256 epoch) external nonReentrant whenNotPaused {
+    function requestRedemptionForEpoch(uint256 shares, uint256 requestedEpoch) external nonReentrant whenNotPaused {
         _updateEpoch();
-        if (epoch == 0) {
-            epoch = _vaultPosition.currentEpoch + 1;
-        }
-        if (epoch < _vaultPosition.currentEpoch + 1) revert InvalidEpoch();
+        if (requestedEpoch < _vaultPosition.currentEpoch + 1) revert InvalidEpoch();
         if (shares == 0) revert InvalidAmount();
         if (balanceOf(msg.sender) < shares) revert InsufficientBalance();
 
-        // Check if user has enough shares to redeem
-        uint256 amount = previewRedeem(shares);
-        if (amount == 0) revert InsufficientShares();
-
         // Add to pending redemption shares for requested epoch
-        pendingRedemptionSharesPerEpoch[msg.sender][epoch] += shares;
-        totalPendingSharesPerEpoch[epoch] += shares;
+        pendingRedemptionSharesPerEpoch[msg.sender][requestedEpoch] += shares;
+        totalPendingSharesPerEpoch[requestedEpoch] += shares;
 
         // Add to redemption users for requested epoch
-        redemptionUsersPerEpoch[epoch].push(msg.sender);
+        redemptionUsersPerEpoch[requestedEpoch].push(msg.sender);
 
-        emit RedemptionRequested(msg.sender, shares, epoch);
+        emit RedemptionRequested(msg.sender, shares, requestedEpoch);
     }
 
     /**
@@ -311,9 +305,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
      * @param user Address of the user
      * @return Total pending redemption shares for the user in the current epoch
      */
-    function getUserAvailableRedemption(address user) public view returns (uint256) {
+    function getUserAvailableRedemption(address user) public returns (uint256) {
+        // if redemption window has closed, return 0
+        if (!_isWithinRedemptionWindow()) return 0;
+        _updateEpoch();
         uint256 pendingRedemptionShares = pendingRedemptionSharesPerEpoch[user][_vaultPosition.currentEpoch];
-        if (!_isWithinRedemptionWindow()) return 0; // if redemption window has closed, return 0
         return pendingRedemptionShares;
     }
 
@@ -326,8 +322,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         return redemptionUsersPerEpoch[epoch];
     }
 
-    function currentEpoch() external view returns (uint256) {
-        return _vaultPosition.currentEpoch;
+    function currentEpoch() external returns (uint256) {
+        return _updateEpoch();
     }
 
     function lastEpochUpdate() external view returns (uint256) {
@@ -402,7 +398,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     }
 
     function _requireIsWithinRedemptionWindow() internal view {
-        if (block.timestamp < _vaultPosition.currentEpochStart + _vaultPosition.preLockRedemptionPeriod) {
+        if (block.timestamp > _vaultPosition.currentEpochStart + _vaultPosition.preLockRedemptionPeriod) {
             revert OutsideRedemptionWindow();
         }
     }

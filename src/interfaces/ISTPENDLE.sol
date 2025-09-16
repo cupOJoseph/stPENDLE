@@ -27,8 +27,9 @@ interface ISTPENDLE {
     function previewVeWithdraw() external view returns (uint256);
     function totalRequestedRedemptionAmountPerEpoch(uint256 epoch) external view returns (uint256);
     function getAvailableRedemptionAmount() external view returns (uint256);
-    function getUserAvailableRedemption(address user) external view returns (uint256);
+    function getUserAvailableRedemption(address user) external returns (uint256);
     function redemptionUsersForEpoch(uint256 epoch) external view returns (address[] memory);
+    function currentEpoch() external returns (uint256);
 
     // -------- Public views --------
     function ADMIN_ROLE() external view returns (uint256);
@@ -45,7 +46,7 @@ interface ISTPENDLE {
     function epochDuration() external view returns (uint128);
     function preLockRedemptionPeriod() external view returns (uint256);
     function totalLockedPendle() external view returns (uint256);
-    function currentEpoch() external view returns (uint256);
+
     function lastEpochUpdate() external view returns (uint256);
 
     // Auto-generated mapping getters
@@ -68,7 +69,7 @@ interface ISTPENDLE {
     event FeeBasisPointsSet(uint256 basisPoints);
     event LockDurationDefaultSet(uint256 duration);
     event FeeReceiverSet(address feeReceiver);
-    event RedemptionRequested(address indexed user, uint256 amount, uint256 requestTime);
+    event RedemptionRequested(address indexed user, uint256 amount, uint256 requestEpoch);
     event RedemptionProcessed(address indexed user, uint256 amount);
     event EpochUpdated(uint256 newEpoch, uint256 lastEpochUpdate);
     event NewEpochStarted(uint256 newEpoch, uint256 lastEpochUpdate, uint256 additionalTime);
