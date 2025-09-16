@@ -290,16 +290,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
 
     /// ============ View Functions ================ ///
 
-    /// @dev Enforce 1:1 shares <-> assets semantics.
-    function convertToShares(uint256 assets) public view override returns (uint256) {
-        return assets;
-    }
-
-    /// @dev Enforce 1:1 shares <-> assets semantics.
-    function convertToAssets(uint256 shares) public view override returns (uint256) {
-        return shares;
-    }
-
     function name() public pure override returns (string memory) {
         return "stPENDLE";
     }
@@ -522,6 +512,24 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     }
 
     // ERC 4626 overrides
+    
+    /// @dev Enforce 1:1 shares <-> assets semantics.
+    function convertToShares(uint256 assets) public view override returns (uint256) {
+        return assets;
+    }
+
+    /// @dev Enforce 1:1 shares <-> assets semantics.
+    function convertToAssets(uint256 shares) public view override returns (uint256) {
+        return shares;
+    }
+
+    function previewRedeem(uint256 shares) public view override returns (uint256) {
+        return shares;
+    }
+
+    function previewDeposit(uint256 assets) public view override returns (uint256) {
+        return assets;
+    }
 
     function redeem(uint256, /*shares */ address, /*to */ address /*owner*/ ) public pure override returns (uint256) {
         revert InvalidERC4626Function(); // this should never be called on this contract
