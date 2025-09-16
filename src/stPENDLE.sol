@@ -41,7 +41,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     // Epoch management
 
     // this vaults current information, total pendle, total locked pendle, current epoch start, last epoch update
-    VaultPosition public vaultPosition;
+    VaultPosition internal _vaultPosition;
 
     // Redemption queue management
     // redemption requests are tracked per epoch when the epoch advances all pending redemptions are cleared
@@ -57,7 +57,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     }
 
     modifier beforeFirstEpoch() {
-        if (vaultPosition.currentEpoch != 0) revert InvalidEpoch();
+        if (_vaultPosition.currentEpoch != 0) revert InvalidEpoch();
         _;
     }
 
@@ -75,8 +75,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         merkleDistributor = IPMerkleDistributor(_merkleDistributorAddress);
         votingController = IPVotingController(_votingControllerAddress);
         ASSET = _pendleTokenAddress;
-        vaultPosition.preLockRedemptionPeriod = _preLockRedemptionPeriod;
-        vaultPosition.epochDuration = _safeCast128(_epochDuration);
+        _vaultPosition.preLockRedemptionPeriod = _preLockRedemptionPeriod;
+        _vaultPosition.epochDuration = _safeCast128(_epochDuration);
 
         _initializeOwner(address(msg.sender));
         _grantRoles(_admin, ADMIN_ROLE);
@@ -92,15 +92,15 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     /// @dev Returns the total amount of assets managed by the vault
     /// This includes locked PENDLE, PENDLE locked in vePENDLE
     function totalAssets() public view virtual override returns (uint256) {
-        return vaultPosition.totalPendleUnderManagement;
+        return _vaultPosition.totalPendleUnderManagement;
     }
 
     /// @dev Deposit PENDLE into the vault and stake it directly in vePENDLE
     function deposit(uint256 amount, address receiver) public override whenNotPaused returns (uint256) {
         uint256 sharesMinted = super.deposit(amount, receiver);
         // update vault position
-        vaultPosition.totalPendleUnderManagement += amount;
-        vaultPosition.totalLockedPendle += amount;
+        _vaultPosition.totalPendleUnderManagement += amount;
+        _vaultPosition.totalLockedPendle += amount;
         
         // increase lock position in vePENDLE
         SafeTransferLib.safeApprove(address(asset()), address(votingEscrowMainchain), amount);
@@ -120,7 +120,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
        if (receiver == address(0)) revert InvalidReceiver();
  
        SafeTransferLib.safeTransferFrom(address(asset()), msg.sender, address(this), amount);
-       vaultPosition.totalPendleUnderManagement += amount;
+       _vaultPosition.totalPendleUnderManagement += amount;
        uint256 sharesMinted = super.deposit(amount, receiver);
 
        return sharesMinted;
@@ -139,12 +139,12 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
 
         emit FeesClaimed(amountToLock, block.timestamp);
 
-        vaultPosition.totalPendleUnderManagement += amountToLock;
+        _vaultPosition.totalPendleUnderManagement += amountToLock;
 
         // if redemption window has closed, lock all remaining PENDLE
-        if (vaultPosition.currentEpochStart + vaultPosition.preLockRedemptionPeriod <= block.timestamp) {
+        if (_vaultPosition.currentEpochStart + _vaultPosition.preLockRedemptionPeriod <= block.timestamp) {
             amountToLock = SafeTransferLib.balanceOf(address(asset()), address(this));
-        if (amountToLock != vaultPosition.totalPendleUnderManagement) revert InvalidPendleBalance();
+        if (amountToLock != _vaultPosition.totalPendleUnderManagement) revert InvalidPendleBalance();
 
         }
         
@@ -152,8 +152,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         if (amountToLock > 0) {
             // lock fees without increasing the lock duration
             votingEscrowMainchain.increaseLockPosition(_safeCast128(amountToLock), 0);
-            vaultPosition.totalLockedPendle += amountToLock;
-            emit AssetPositionIncreased(amountToLock, vaultPosition.currentEpoch, 0);
+            _vaultPosition.totalLockedPendle += amountToLock;
+            emit AssetPositionIncreased(amountToLock, _vaultPosition.currentEpoch, 0);
         }
     }
 
@@ -161,16 +161,16 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
      * @notice Start the first epoch, admin only function must have pendle balance in contract or will revert
      */
     function startFirstEpoch() external beforeFirstEpoch whenNotPaused nonReentrant onlyRoles(ADMIN_ROLE) {
-        if (vaultPosition.totalPendleUnderManagement == 0) revert InvalidPendleBalance();
+        if (_vaultPosition.totalPendleUnderManagement == 0) revert InvalidPendleBalance();
 
         uint256 newEpoch = _updateEpoch();
-        votingEscrowMainchain.increaseLockPosition(_safeCast128(vaultPosition.totalLockedPendle), vaultPosition.epochDuration);
+        votingEscrowMainchain.increaseLockPosition(_safeCast128(_vaultPosition.totalLockedPendle), _vaultPosition.epochDuration);
 
-        vaultPosition.totalLockedPendle = vaultPosition.totalPendleUnderManagement;
-        vaultPosition.currentEpoch = newEpoch;
-        vaultPosition.currentEpochStart = block.timestamp;
+        _vaultPosition.totalLockedPendle = _vaultPosition.totalPendleUnderManagement;
+        _vaultPosition.currentEpoch = newEpoch;
+        _vaultPosition.currentEpochStart = block.timestamp;
 
-        emit NewEpochStarted(newEpoch, block.timestamp, vaultPosition.epochDuration);
+        emit NewEpochStarted(newEpoch, block.timestamp, _vaultPosition.epochDuration);
     }
 
     /**
@@ -180,41 +180,38 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
      */
     function startNewEpoch() external whenNotPaused nonReentrant {
         uint256 newEpoch = _updateEpoch();
-        if (newEpoch <= vaultPosition.currentEpoch) revert InvalidEpoch();
+        if (newEpoch <= _vaultPosition.currentEpoch) revert InvalidEpoch();
 
         // 1) Claim matured vePENDLE
         uint256 claimed = uint256(votingEscrowMainchain.withdraw());
-        vaultPosition.totalLockedPendle = 0;
+        _vaultPosition.totalLockedPendle = 0;
         
         uint256 totalPendleBalance = SafeTransferLib.balanceOf(address(asset()), address(this));
         // TODO: for testing remove later
-        if (totalPendleBalance != vaultPosition.totalPendleUnderManagement) revert InvalidPendleBalance();
+        if (totalPendleBalance != _vaultPosition.totalPendleUnderManagement) revert InvalidPendleBalance();
         // 2) Reserve assets for redemptions in the new epoch
         uint256 pendingShares = totalPendingSharesPerEpoch[newEpoch]; // tracked in shares
         uint256 reserveAssets = 0;
         if (pendingShares != 0) {
-            uint256 ts = totalSupply();
-            if (ts != 0) {
-                // uint256 ta = totalAssets();
-                reserveAssets = FixedPointMathLib.fullMulDivUp(pendingShares, totalPendleBalance, ts);
-                if (reserveAssets > totalPendleBalance) reserveAssets = totalPendleBalance; // clamp
-            }
+            // 1:1 semantics: reserve exactly the pending shares (clamped)
+            reserveAssets = pendingShares;
+            if (reserveAssets > totalPendleBalance) reserveAssets = totalPendleBalance; // clamp
         }
 
         // 3) Lock all remaining available assets
         uint256 assetsToLock = totalPendleBalance - reserveAssets;
         if (assetsToLock != 0) {
-            votingEscrowMainchain.increaseLockPosition(_safeCast128(assetsToLock), vaultPosition.epochDuration);
-            vaultPosition.totalLockedPendle += assetsToLock;
-            emit AssetPositionIncreased(assetsToLock, vaultPosition.currentEpoch, vaultPosition.epochDuration);
+            votingEscrowMainchain.increaseLockPosition(_safeCast128(assetsToLock), _vaultPosition.epochDuration);
+            _vaultPosition.totalLockedPendle += assetsToLock;
+            emit AssetPositionIncreased(assetsToLock, _vaultPosition.currentEpoch, _vaultPosition.epochDuration);
         }
        
 
         // 4) Advance epoch book-keeping
-        vaultPosition.currentEpoch = newEpoch;
-        vaultPosition.currentEpochStart = block.timestamp;
-        vaultPosition.lastEpochUpdate = block.timestamp;
-        emit NewEpochStarted(newEpoch, block.timestamp, vaultPosition.epochDuration);
+        _vaultPosition.currentEpoch = newEpoch;
+        _vaultPosition.currentEpochStart = block.timestamp;
+        _vaultPosition.lastEpochUpdate = block.timestamp;
+        emit NewEpochStarted(newEpoch, block.timestamp, _vaultPosition.epochDuration);
     }
 
     /**
@@ -224,9 +221,9 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     function requestRedemptionForEpoch(uint256 shares, uint256 epoch) external nonReentrant whenNotPaused {
         _updateEpoch();
         if (epoch == 0) {
-            epoch = vaultPosition.currentEpoch + 1;
+            epoch = _vaultPosition.currentEpoch + 1;
         }
-        if (epoch < vaultPosition.currentEpoch + 1) revert InvalidEpoch();
+        if (epoch < _vaultPosition.currentEpoch + 1) revert InvalidEpoch();
         if (shares == 0) revert InvalidAmount();
         if (balanceOf(msg.sender) < shares) revert InsufficientBalance();
 
@@ -267,7 +264,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         _requireIsWithinRedemptionWindow();
 
         uint256 availableForRedemption = _getAvailableRedemptionAmount();
-        uint256 totalPendingRedemptions = totalPendingSharesPerEpoch[vaultPosition.currentEpoch];
+        uint256 totalPendingRedemptions = totalPendingSharesPerEpoch[_vaultPosition.currentEpoch];
         if (availableForRedemption < totalPendingRedemptions) {
             revert InvalidRedemptionAmount(totalPendingRedemptions, availableForRedemption);
         }
@@ -277,11 +274,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
             revert InvalidRedemptionAmount(withdrawnAmount, availableForRedemption);
         }
         // Process redemption requests in FIFO order
-        address[] memory users = redemptionUsersPerEpoch[vaultPosition.currentEpoch];
+        address[] memory users = redemptionUsersPerEpoch[_vaultPosition.currentEpoch];
 
         for (uint256 i = 0; i < users.length; i++) {
             address user = users[i];
-            uint256 userRedemptionShares = pendingRedemptionSharesPerEpoch[user][vaultPosition.currentEpoch];
+            uint256 userRedemptionShares = pendingRedemptionSharesPerEpoch[user][_vaultPosition.currentEpoch];
 
             if (userRedemptionShares > 0) {
                 uint256 amountRedeemed = _processRedemption(user, userRedemptionShares);
@@ -292,6 +289,16 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     }
 
     /// ============ View Functions ================ ///
+
+    /// @dev Enforce 1:1 shares <-> assets semantics.
+    function convertToShares(uint256 assets) public view override returns (uint256) {
+        return assets;
+    }
+
+    /// @dev Enforce 1:1 shares <-> assets semantics.
+    function convertToAssets(uint256 shares) public view override returns (uint256) {
+        return shares;
+    }
 
     function name() public pure override returns (string memory) {
         return "stPENDLE";
@@ -306,7 +313,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
      * @return Amount available for redemption
      */
     function previewVeWithdraw() public view returns (uint256) {
-        if (block.timestamp - vaultPosition.lastEpochUpdate < vaultPosition.epochDuration) return 0;
+        if (block.timestamp - _vaultPosition.lastEpochUpdate < _vaultPosition.epochDuration) return 0;
 
         (bool success, bytes memory data) =
             address(votingEscrowMainchain).staticcall(abi.encodeWithSelector(votingEscrowMainchain.withdraw.selector));
@@ -331,7 +338,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
      * @return Total pending redemption shares for the user in the current epoch
      */
     function getUserAvailableRedemption(address user) public view returns (uint256) {
-        uint256 pendingRedemptionShares = pendingRedemptionSharesPerEpoch[user][vaultPosition.currentEpoch];
+        uint256 pendingRedemptionShares = pendingRedemptionSharesPerEpoch[user][_vaultPosition.currentEpoch];
         if (!_isWithinRedemptionWindow()) return 0; // if redemption window has closed, return 0
             return pendingRedemptionShares;
     }
@@ -346,27 +353,27 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     }
 
     function currentEpoch() external view returns (uint256) {
-        return vaultPosition.currentEpoch;
+        return _vaultPosition.currentEpoch;
     }
 
     function lastEpochUpdate() external view returns (uint256) {
-        return vaultPosition.lastEpochUpdate;
+        return _vaultPosition.lastEpochUpdate;
     }
 
     function epochDuration() external view returns (uint128) {
-        return vaultPosition.epochDuration;
+        return _vaultPosition.epochDuration;
     }
 
     function preLockRedemptionPeriod() external view returns (uint256) {
-        return vaultPosition.preLockRedemptionPeriod;
+        return _vaultPosition.preLockRedemptionPeriod;
     }
 
     function totalPendleUnderManagement() external view returns (uint256) {
-        return vaultPosition.totalPendleUnderManagement;
+        return _vaultPosition.totalPendleUnderManagement;
     }
 
     function totalLockedPendle() external view returns (uint256) {
-        return vaultPosition.totalLockedPendle;
+        return _vaultPosition.totalLockedPendle;
     }
 
     function totalRequestedRedemptionAmountPerEpoch(uint256 epoch) external view returns (uint256) {
@@ -396,7 +403,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     function setEpochDuration(uint128 _duration) public onlyRoles(TIMELOCK_CONTROLLER_ROLE) {
         if (_duration < 1 days) revert EpochDurationInvalid();
         if (_duration > 730 days) revert EpochDurationInvalid();
-        vaultPosition.epochDuration = _safeCast128(_duration);
+        _vaultPosition.epochDuration = _safeCast128(_duration);
         emit EpochDurationSet(_duration);
     }
 
@@ -419,37 +426,37 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
 
     /// =========== Internal Functions ================ ///
     function _requireNextEpoch() internal view {
-        if (_calculateEpoch() != vaultPosition.currentEpoch + 1) {
+        if (_calculateEpoch() != _vaultPosition.currentEpoch + 1) {
             revert EpochNotEnded();
         }
     }
 
     function _requireIsWithinRedemptionWindow() internal view {
-        if (block.timestamp < vaultPosition.currentEpochStart + vaultPosition.preLockRedemptionPeriod) {
+        if (block.timestamp < _vaultPosition.currentEpochStart + _vaultPosition.preLockRedemptionPeriod) {
             revert OutsideRedemptionWindow();
         }
     }
 
     function _isWithinRedemptionWindow() internal view returns (bool) {
-        return block.timestamp < vaultPosition.currentEpochStart + vaultPosition.preLockRedemptionPeriod;
+        return block.timestamp < _vaultPosition.currentEpochStart + _vaultPosition.preLockRedemptionPeriod;
     }
 
     function _calculateEpoch() internal view returns (uint256) {
-        return block.timestamp / vaultPosition.epochDuration;
+        return block.timestamp / _vaultPosition.epochDuration;
     }
 
     function _updateEpoch() internal returns (uint256 newEpoch) {
         newEpoch = _calculateEpoch();
-        if (newEpoch > vaultPosition.currentEpoch) {
-            vaultPosition.currentEpoch = newEpoch;
-            vaultPosition.lastEpochUpdate = block.timestamp;
-            emit EpochUpdated(newEpoch, vaultPosition.lastEpochUpdate);
+        if (newEpoch > _vaultPosition.currentEpoch) {
+            _vaultPosition.currentEpoch = newEpoch;
+            _vaultPosition.lastEpochUpdate = block.timestamp;
+            emit EpochUpdated(newEpoch, _vaultPosition.lastEpochUpdate);
         }
     }
 
     function _getAvailableRedemptionAmount() internal view returns (uint256) {
         // the amount of pendle currently available to withdraw (unlocked in this contract)
-        uint256 available = vaultPosition.totalPendleUnderManagement - vaultPosition.totalLockedPendle;
+        uint256 available = _vaultPosition.totalPendleUnderManagement - _vaultPosition.totalLockedPendle;
 
         return available;
     }
@@ -468,21 +475,21 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         // assert that the user has enough pending redemption shares
         if (currentPendingRedemptionShares < shares) revert InsufficientShares();
 
-        // convert to underlying PENDLE
-        uint256 pendleToReceive = FixedPointMathLib.fullMulDivUp(shares, totalAssets(), totalSupply());
+        // 1:1 redemption: shares map directly to PENDLE units
+        uint256 pendleToReceive = shares;
 
         // assert that vault has enough balance
         if (SafeTransferLib.balanceOf(address(asset()), address(this)) < pendleToReceive) revert InsufficientBalance();
 
         // Update pending amounts
-        pendingRedemptionSharesPerEpoch[user][vaultPosition.currentEpoch] -= shares;
-        totalPendingSharesPerEpoch[vaultPosition.currentEpoch] -= shares;
+        pendingRedemptionSharesPerEpoch[user][_vaultPosition.currentEpoch] -= shares;
+        totalPendingSharesPerEpoch[_vaultPosition.currentEpoch] -= shares;
 
         // redeem shares
         uint256 amountRedeemed = super.redeem(shares, user, user);
 
         // update vault position
-        vaultPosition.totalPendleUnderManagement -= amountRedeemed;
+        _vaultPosition.totalPendleUnderManagement -= amountRedeemed;
 
         if (amountRedeemed > pendleToReceive) revert InvalidRedemption();
         emit RedemptionProcessed(user, pendleToReceive);
@@ -492,10 +499,10 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
 
     function _lockTotalPendleBalance() internal {
         uint256 totalPendleBalance = SafeTransferLib.balanceOf(address(asset()), address(this));
-        if (totalPendleBalance != vaultPosition.totalPendleUnderManagement) revert InvalidPendleBalance();
-        votingEscrowMainchain.increaseLockPosition(_safeCast128(totalPendleBalance), vaultPosition.epochDuration);
-        vaultPosition.totalLockedPendle += totalPendleBalance;
-        emit AssetPositionIncreased(totalPendleBalance, vaultPosition.currentEpoch, vaultPosition.epochDuration);
+        if (totalPendleBalance != _vaultPosition.totalPendleUnderManagement) revert InvalidPendleBalance();
+        votingEscrowMainchain.increaseLockPosition(_safeCast128(totalPendleBalance), _vaultPosition.epochDuration);
+        _vaultPosition.totalLockedPendle += totalPendleBalance;
+        emit AssetPositionIncreased(totalPendleBalance, _vaultPosition.currentEpoch, _vaultPosition.epochDuration);
     }
 
     function _safeCast128(uint256 value) internal pure returns (uint128) {

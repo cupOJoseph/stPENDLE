@@ -10,6 +10,7 @@ import {IPVeToken} from "src/interfaces/pendle/IPVeToken.sol";
 import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
 import {ISTPENDLE} from "src/interfaces/ISTPENDLE.sol";
 import {VaultPosition, UserPosition, WithdrawalRequest} from "src/dependencies/VaultStructs.sol";
+import {IERC20} from "lib/forge-std/src/interfaces/IERC20.sol";
 
 /// forge-lint: disable-start(all)
 // Mock contracts for testing
@@ -63,7 +64,12 @@ contract MockVotingEscrowMainchain {
 
 contract MockMerkleDistributor {
     mapping(address => uint256) public claimableAmounts;
+    MockPENDLE public pendle;
 
+    constructor(MockPENDLE _mockErc20) {
+        pendle = _mockErc20;
+        pendle.mint(address(this), 1000e18);
+    }
     function setClaimable(address account, uint256 amount) external {
         claimableAmounts[account] = amount;
     }
@@ -78,6 +84,7 @@ contract MockMerkleDistributor {
     {
         uint256 claimableAmount = claimableAmounts[account];
         claimableAmounts[account] = 0;
+        pendle.mint(account, claimableAmount);
         return claimableAmount;
     }
 }
@@ -145,8 +152,11 @@ contract stPENDLETest is Test {
     event WithdrawalProcessed(address indexed user, uint256 amount);
 
     function setUp() public {
+        usdt = new MockUSDT();
+        pendle = new MockPENDLE();
+
         // Deploy mock contracts
-        merkleDistributor = new MockMerkleDistributor();
+        merkleDistributor = new MockMerkleDistributor(pendle);
         votingController = new MockVotingController();
         votingEscrowMainchain = new MockVotingEscrowMainchain();
         address[] memory proposers = new address[](1);
@@ -154,8 +164,6 @@ contract stPENDLETest is Test {
         proposers[0] = address(this);
         executors[0] = address(this);
         timelockController = new TimelockController(1 hours, proposers, executors, address(this));
-        usdt = new MockUSDT();
-        pendle = new MockPENDLE();
 
         // Deploy vault
         vault = new stPENDLE(
@@ -194,6 +202,17 @@ contract stPENDLETest is Test {
         vm.label(david, "David");
         vm.label(eve, "Eve");
         vm.label(feeReceiver, "FeeReceiver");
+    }
+
+    function startFirstEpoch() public {
+        vm.startPrank(alice);
+        pendle.approve(address(vault), DEPOSIT_AMOUNT);
+        vault.depositBeforeFirstEpoch(DEPOSIT_AMOUNT, alice);
+        vm.stopPrank();
+        
+        vm.startPrank(address(this));
+        vault.startFirstEpoch();
+        vm.stopPrank();
     }
 
     function test_Constructor() public view {
@@ -264,7 +283,7 @@ contract stPENDLETest is Test {
         uint256 requestEpoch = vault.currentEpoch() + 1;
 
         // Per-epoch totals should reflect both users' queued shares
-        uint256 totalQueued = vault.getTotalRequestedRedemptionAmountPerEpoch(requestEpoch);
+        uint256 totalQueued = vault.totalRequestedRedemptionAmountPerEpoch(requestEpoch);
         assertEq(totalQueued, aliceRequestShares + bobRequestShares, "Queued shares per epoch mismatch");
  
         // User list for that epoch should include Alice then Bob
