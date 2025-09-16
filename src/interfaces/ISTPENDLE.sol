@@ -7,17 +7,15 @@ import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
 import {IERC4626} from "lib/forge-std/src/interfaces/IERC4626.sol";
 
 interface ISTPENDLE {
-
     struct VaultPosition {
-    uint256 totalPendleUnderManagement;
-    uint256 totalLockedPendle;
-    uint256 currentEpoch;
-    uint128 epochDuration;
-    uint256 lastEpochUpdate;
-    uint256 currentEpochStart;
-    uint256 preLockRedemptionPeriod;
-}
-
+        uint256 totalPendleUnderManagement;
+        uint256 totalLockedPendle;
+        uint256 currentEpoch;
+        uint128 epochDuration;
+        uint256 lastEpochUpdate;
+        uint256 currentEpochStart;
+        uint256 preLockRedemptionPeriod;
+    }
 
     // -------- External state-changing --------
     function claimFees(uint256 totalAccrued, bytes32[] calldata proof) external;
@@ -77,12 +75,13 @@ interface ISTPENDLE {
     event EpochUpdated(uint256 newEpoch, uint256 lastEpochUpdate);
     event NewEpochStarted(uint256 newEpoch, uint256 lastEpochUpdate, uint256 additionalTime);
     event EpochDurationSet(uint128 duration);
-    event AssetPositionIncreased(uint256 amount, uint256 currentEpoch,uint256 additionalTime);
+    event AssetPositionIncreased(uint256 amount, uint256 currentEpoch, uint256 additionalTime);
     event FeesClaimed(uint256 amount, uint256 timestamp);
     event FeesDistributed(uint256 pendleAmount, uint256 usdtAmount);
     event Paused(bool paused);
     event RedemptionExpired(address indexed user, uint256 amount);
     //test
+
     error InvalidPendleBalance();
 
     // errors
@@ -103,5 +102,3 @@ interface ISTPENDLE {
     error InvalidRewardsSplit();
     error InvalidReceiver();
 }
-
-

@@ -70,6 +70,7 @@ contract MockMerkleDistributor {
         pendle = _mockErc20;
         pendle.mint(address(this), 1000e18);
     }
+
     function setClaimable(address account, uint256 amount) external {
         claimableAmounts[account] = amount;
     }
@@ -209,7 +210,7 @@ contract stPENDLETest is Test {
         pendle.approve(address(vault), DEPOSIT_AMOUNT);
         vault.depositBeforeFirstEpoch(DEPOSIT_AMOUNT, alice);
         vm.stopPrank();
-        
+
         vm.startPrank(address(this));
         vault.startFirstEpoch();
         vm.stopPrank();
@@ -285,7 +286,7 @@ contract stPENDLETest is Test {
         // Per-epoch totals should reflect both users' queued shares
         uint256 totalQueued = vault.totalRequestedRedemptionAmountPerEpoch(requestEpoch);
         assertEq(totalQueued, aliceRequestShares + bobRequestShares, "Queued shares per epoch mismatch");
- 
+
         // User list for that epoch should include Alice then Bob
         address[] memory users = vault.redemptionUsersForEpoch(requestEpoch);
         assertEq(users.length, 2, "Unexpected number of redemption users");
@@ -304,15 +305,12 @@ contract stPENDLETest is Test {
         // warp to pending epoch
         vm.warp(block.timestamp + 30 days);
 
-
         vm.prank(alice);
         uint256 aliceClaimed = vault.claimAvailableRedemptionShares(aliceRequestShares);
         assertEq(aliceClaimed, aliceRequestShares, "Alice should have claimed their shares");
     }
 
-    function test_ProcessWithdrawals() public {
-        
-    }
+    function test_ProcessWithdrawals() public {}
 
     function test_startFirstEpoch() public {
         vault.startFirstEpoch();
