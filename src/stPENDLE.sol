@@ -12,12 +12,13 @@ import {IPVotingEscrowMainchain} from "src/interfaces/pendle/IPVotingEscrowMainc
 import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
 
 import {ISTPENDLE} from "src/interfaces/ISTPENDLE.sol";
-import 'forge-std/console.sol';
+import "forge-std/console.sol";
 /**
  * @title stPENDLE - ERC-4626 Vault for PENDLE Staking
  * @notice Accepts PENDLE deposits and stakes them in vePENDLE for rewards
  * @dev Fully compliant with ERC-4626 tokenized vault standard using Solady
  */
+
 contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     using SafeTransferLib for address;
     using FixedPointMathLib for uint256;
@@ -167,9 +168,9 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
      * @dev Will revert if epoch is not ended
      */
     function startNewEpoch() external whenNotPaused nonReentrant {
-        if(_vaultPosition.currentEpochStart + _vaultPosition.epochDuration > block.timestamp) revert InvalidEpoch();
+        if (_vaultPosition.currentEpochStart + _vaultPosition.epochDuration > block.timestamp) revert InvalidEpoch();
         uint256 newEpoch = _updateEpoch();
-        
+
         // 1) Claim matured vePENDLE
         uint256(votingEscrowMainchain.withdraw());
         _vaultPosition.totalLockedPendle = 0;
@@ -188,8 +189,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         // 3) Lock all remaining available assets
         uint256 assetsToLock = totalPendleBalance - reserveAssets;
         if (assetsToLock != 0) {
-           _lockPendle(assetsToLock, _vaultPosition.epochDuration);
-           
+            _lockPendle(assetsToLock, _vaultPosition.epochDuration);
         }
 
         // 4) Advance epoch book-keeping
@@ -231,7 +231,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         // Process redemption requests
         return _processRedemption(msg.sender, shares);
     }
-    
+
     /// ============ View Functions ================ ///
 
     function name() public pure override returns (string memory) {
@@ -303,7 +303,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     function preLockRedemptionPeriod() external view returns (uint256) {
         return _vaultPosition.preLockRedemptionPeriod;
     }
-
 
     function totalLockedPendle() external view returns (uint256) {
         return _vaultPosition.totalLockedPendle;

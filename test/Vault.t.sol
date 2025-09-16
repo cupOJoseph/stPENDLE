@@ -21,6 +21,7 @@ contract MockVotingEscrowMainchain {
     uint128 public totalSupply;
     MockPENDLE public pendle;
     MockMerkleDistributor public merkleDistributor;
+
     constructor(MockPENDLE _pendle, MockMerkleDistributor _merkleDistributor) {
         pendle = _pendle;
         merkleDistributor = _merkleDistributor;
@@ -28,8 +29,8 @@ contract MockVotingEscrowMainchain {
 
     function increaseLockPosition(uint128 additionalAmountToLock, uint128 expiry) external returns (uint128) {
         require(additionalAmountToLock > 0, "Additional amount to lock must be greater than 0");
-       pendle.transferFrom(msg.sender, address(this), additionalAmountToLock);
-       merkleDistributor.setClaimable(msg.sender, additionalAmountToLock / 10);
+        pendle.transferFrom(msg.sender, address(this), additionalAmountToLock);
+        merkleDistributor.setClaimable(msg.sender, additionalAmountToLock / 10);
         balances[msg.sender] += additionalAmountToLock;
         lockedBalances[msg.sender] += additionalAmountToLock;
         unlockTimes[msg.sender] = expiry;
@@ -271,7 +272,9 @@ contract stPENDLETest is Test {
         pendle.approve(address(vault), DEPOSIT_AMOUNT);
         uint256 aliceShares = vault.deposit(DEPOSIT_AMOUNT, alice);
         vm.stopPrank();
-        assertEq(pendle.balanceOf(alice), INITIAL_BALANCE - DEPOSIT_AMOUNT, "Alice should have correct balance in pendle");
+        assertEq(
+            pendle.balanceOf(alice), INITIAL_BALANCE - DEPOSIT_AMOUNT, "Alice should have correct balance in pendle"
+        );
         assertEq(vault.balanceOf(alice), DEPOSIT_AMOUNT, "Alice should have correct balance in vault");
         vm.startPrank(bob);
         pendle.approve(address(vault), DEPOSIT_AMOUNT);
@@ -279,7 +282,11 @@ contract stPENDLETest is Test {
         vm.stopPrank();
         assertEq(pendle.balanceOf(bob), INITIAL_BALANCE - bobShares, "Bob should have correct balance in pendle");
         assertEq(vault.balanceOf(bob), bobShares, "Bob should have correct balance in vault");
-        assertEq(votingEscrowMainchain.balanceOf(address(vault)), DEPOSIT_AMOUNT * 3, "Vault should have correct balance in vependle");
+        assertEq(
+            votingEscrowMainchain.balanceOf(address(vault)),
+            DEPOSIT_AMOUNT * 3,
+            "Vault should have correct balance in vependle"
+        );
 
         // Initially, all deposited PENDLE is locked; available for redemption should be 0
         assertEq(vault.getAvailableRedemptionAmount(), 0, "No unlocked assets initially");
@@ -323,33 +330,65 @@ contract stPENDLETest is Test {
         // start new epoch
         vm.prank(address(this));
         vault.startNewEpoch();
-        assertEq(vault.getAvailableRedemptionAmount(), aliceRequestShares + bobRequestShares, "Should have correct available redemption amount");
-        assertEq(pendle.balanceOf(address(vault)), aliceRequestShares + bobRequestShares, "Vault should have correct balance in pendle");
+        assertEq(
+            vault.getAvailableRedemptionAmount(),
+            aliceRequestShares + bobRequestShares,
+            "Should have correct available redemption amount"
+        );
+        assertEq(
+            pendle.balanceOf(address(vault)),
+            aliceRequestShares + bobRequestShares,
+            "Vault should have correct balance in pendle"
+        );
         // assert available redemption
-        assertEq(vault.getUserAvailableRedemption(alice), aliceRequestShares, "Alice should have current-epoch availability");
+        assertEq(
+            vault.getUserAvailableRedemption(alice), aliceRequestShares, "Alice should have current-epoch availability"
+        );
         assertEq(vault.getUserAvailableRedemption(bob), DEPOSIT_AMOUNT, "Bob should have current-epoch availability");
 
         vm.prank(alice);
-        uint256 aliceClaimed = vault.claimAvailableRedemptionShares(aliceRequestShares /2);
+        uint256 aliceClaimed = vault.claimAvailableRedemptionShares(aliceRequestShares / 2);
         assertEq(aliceClaimed, aliceRequestShares / 2, "Alice should have claimed half their shares");
-        assertEq(vault.getUserAvailableRedemption(alice), aliceRequestShares / 2, "Alice should have current-epoch availability anymore");
-        assertEq(pendle.balanceOf(alice),  INITIAL_BALANCE - (DEPOSIT_AMOUNT - (aliceRequestShares / 2)), "Alice should correct balance in pendle");
+        assertEq(
+            vault.getUserAvailableRedemption(alice),
+            aliceRequestShares / 2,
+            "Alice should have current-epoch availability anymore"
+        );
+        assertEq(
+            pendle.balanceOf(alice),
+            INITIAL_BALANCE - (DEPOSIT_AMOUNT - (aliceRequestShares / 2)),
+            "Alice should correct balance in pendle"
+        );
 
         vm.prank(bob);
         uint256 bobClaimed = vault.claimAvailableRedemptionShares(bobRequestShares / 2);
         assertEq(bobClaimed, bobRequestShares / 2, "Bob should have claimed their shares");
-        assertEq(vault.getUserAvailableRedemption(bob), bobRequestShares / 2, "Bob shouldn't have current-epoch availability anymore");
-        assertEq(pendle.balanceOf(bob), INITIAL_BALANCE - (DEPOSIT_AMOUNT - bobRequestShares /2 ), "Bob should correct balance in pendle");
+        assertEq(
+            vault.getUserAvailableRedemption(bob),
+            bobRequestShares / 2,
+            "Bob shouldn't have current-epoch availability anymore"
+        );
+        assertEq(
+            pendle.balanceOf(bob),
+            INITIAL_BALANCE - (DEPOSIT_AMOUNT - bobRequestShares / 2),
+            "Bob should correct balance in pendle"
+        );
 
         // warp past redemption window
         vm.warp(block.timestamp + 29 days);
         assertEq(vault.getUserAvailableRedemption(alice), 0, "Alice shouldn't have current-epoch availability anymore");
         assertEq(vault.getUserAvailableRedemption(bob), 0, "Bob shouldn't have current-epoch availability anymore");
-        assertEq(pendle.balanceOf(alice), INITIAL_BALANCE - (DEPOSIT_AMOUNT - (aliceRequestShares / 2)), "Alice should correct balance in pendle");
-        assertEq(pendle.balanceOf(bob), INITIAL_BALANCE - (DEPOSIT_AMOUNT - bobRequestShares /2 ), "Bob should correct balance in pendle");
-        
+        assertEq(
+            pendle.balanceOf(alice),
+            INITIAL_BALANCE - (DEPOSIT_AMOUNT - (aliceRequestShares / 2)),
+            "Alice should correct balance in pendle"
+        );
+        assertEq(
+            pendle.balanceOf(bob),
+            INITIAL_BALANCE - (DEPOSIT_AMOUNT - bobRequestShares / 2),
+            "Bob should correct balance in pendle"
+        );
     }
-
 
     function test_startFirstEpoch() public {
         vm.startPrank(alice);
