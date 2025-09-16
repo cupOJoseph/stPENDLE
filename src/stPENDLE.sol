@@ -168,7 +168,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
      * @dev Will revert if epoch is not ended
      */
     function startNewEpoch() external whenNotPaused nonReentrant {
-        if (_vaultPosition.currentEpochStart + _vaultPosition.epochDuration > block.timestamp) revert InvalidEpoch();
+        _requireNextEpoch();
         uint256 newEpoch = _updateEpoch();
 
         // 1) Claim matured vePENDLE
@@ -357,7 +357,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
 
     /// =========== Internal Functions ================ ///
     function _requireNextEpoch() internal view {
-        if (_calculateEpoch() != _vaultPosition.currentEpoch + 1) {
+        if (_calculateEpoch(block.timestamp) != _calculateEpoch(_vaultPosition.currentEpochStart) + 1) {
             revert EpochNotEnded();
         }
     }
@@ -372,8 +372,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         return block.timestamp < _vaultPosition.currentEpochStart + _vaultPosition.preLockRedemptionPeriod;
     }
 
-    function _calculateEpoch() internal view returns (uint256) {
-        return block.timestamp / _vaultPosition.epochDuration;
+    function _calculateEpoch(uint256 timestamp) internal view returns (uint256) {
+        return timestamp / _vaultPosition.epochDuration;
     }
 
     function _updateEpoch() internal returns (uint256 newEpoch) {
