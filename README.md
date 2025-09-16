@@ -11,13 +11,17 @@ Token and vault contract for institutional grade vePENDLE liquid staking.
 
 ## Withdrawals and Redemption Queue (stPENDLE.sol)
 
+- **1:1 shares to PENDLE**: Shares represent PENDLE 1:1. `convertToShares`/`convertToAssets` are identity; redemptions/claims return exactly the same number of PENDLE as shares.
 - **Epoch-based queue**: Withdrawals are requested in shares and queued per epoch. Requests for the current epoch are not allowed; use the next epoch or a specific future epoch.
 - **How to request**: `requestRedemptionForEpoch(uint256 shares, uint256 epoch)` where `epoch = 0` means `currentEpoch + 1`. The vault records pending shares per user per epoch.
-- **Redemption window**: During each epoch, there is a window defined by `preLockRedemptionPeriod` when redemptions can be processed/claimed. Outside the window, claims return 0.
-- **Processing**: Anyone can batch process the current epoch with `processRedemptions()` (withdraws unlocked PENDLE from vePENDLE and fulfills requests FIFO). Users can self-claim with `claimAvailableRedemptionShares(uint256 shares)` during the window.
-- **Liquidity and epochs**: On `startNewEpoch()`, the vault advances the epoch, withdraws matured vePENDLE, reserves assets for pending redemptions of the new epoch, and re-locks remaining assets for `epochDuration`.
-- **Observability**: `getUserAvailableRedemption(address)`, `getTotalRequestedRedemptionAmountPerEpoch(uint256)`, `redemptionUsersForEpoch(uint256)`, `getAvailableRedemptionAmount()`, and `previewVeWithdraw()` expose queue and liquidity state.
-- **ERC-4626 overrides**: Direct `redeem` and `mint` are disabled (revert). Use the queue flow above.
+- **Redemption window**: During each epoch, claims can be executed only within `preLockRedemptionPeriod` from the epoch start; outside the window, claims return 0.
+- **Claiming**: Users claim queued redemptions with `claimAvailableRedemptionShares(uint256 shares)` during the window. 
+- **Liquidity and epochs**:
+  - `startFirstEpoch()`: locks the vault’s entire PENDLE balance for the initial epoch.
+  - `startNewEpoch()`: withdraws matured vePENDLE, reserves assets equal to pending shares for the new epoch, and re-locks remaining assets for `epochDuration`.
+- **Observability**: `getUserAvailableRedemption(address)`, `getTotalRequestedRedemptionAmountPerEpoch(uint256)`, `redemptionUsersForEpoch(uint256)`, `getAvailableRedemptionAmount()` (unlocked PENDLE balance), and `previewVeWithdraw()` expose queue and liquidity state.
+- **Fees**: `claimFees(totalAccrued, proof)` mints vault shares equal to fees received to maintain the 1:1 invariant, then locks either the claimed amount or all unlocked assets depending on whether the redemption window is open.
+- **ERC-4626 overrides**: Direct `redeem`, `mint`, and `withdraw` are disabled (revert). Use the queue flow.
 
 ## Dev Instructions 
 
