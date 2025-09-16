@@ -148,6 +148,20 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     }
 
     /**
+     * TODO: This is the most basic possible implementation for now.  must update with actual distribution mechanism
+     * @notice Distribute fees to the receivers
+     * @param amounts Amount of shares to distribute to each receiver
+     * @param receivers Addresses to distribute fees to
+     */
+    function distributeFees(uint256[] calldata amounts, address[] calldata receivers) public onlyRoles(ADMIN_ROLE) {
+        if (amounts.length != receivers.length) revert InvalidAmount();
+        for (uint256 i = 0; i < amounts.length; i++) {
+            // transfer shares from this contract to the receivers
+            transfer(receivers[i], amounts[i]);
+        }
+    }
+
+    /**
      * @notice Start the first epoch, admin only function must have pendle balance in contract or will revert
      */
     function startFirstEpoch() external beforeFirstEpoch whenNotPaused nonReentrant onlyRoles(ADMIN_ROLE) {
