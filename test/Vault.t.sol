@@ -266,7 +266,7 @@ contract stPENDLETest is Test {
         assertEq(pendle.balanceOf(address(vault)), 0, "Vault should have 100% locked");
     }
 
-    function test_claimableFeesWithPendingRedemptions() public {
+    function test_claimFeesWithPendingRedemptions() public {
         startFirstEpoch();
         // Alice and Bob deposit
         vm.startPrank(alice);
@@ -277,6 +277,7 @@ contract stPENDLETest is Test {
         pendle.approve(address(vault), DEPOSIT_AMOUNT);
         uint256 bobShares = vault.deposit(DEPOSIT_AMOUNT, bob);
         vm.stopPrank();
+
         assertEq(pendle.balanceOf(alice), INITIAL_BALANCE - DEPOSIT_AMOUNT, "Alice should have correct balance in pendle");
         assertEq(vault.balanceOf(alice), DEPOSIT_AMOUNT, "Alice should have correct balance in vault");
         assertEq(pendle.balanceOf(bob), INITIAL_BALANCE - DEPOSIT_AMOUNT, "Bob should have correct balance in pendle");
@@ -302,10 +303,20 @@ contract stPENDLETest is Test {
         assertEq(vault.getAvailableRedemptionAmount(), aliceShares / 2 + bobShares / 2, "Should have correct available redemption amount");
         assertEq(vault.getUserAvailableRedemption(alice), aliceShares / 2, "Alice should have correct available redemption amount");
         assertEq(vault.getUserAvailableRedemption(bob), bobShares / 2, "Bob should have correct available redemption amount");
-        assertEq(pendle.balanceOf(address(vault)), (aliceShares / 2 + bobShares / 2) , "Vault should have correct balance in pendle");
+        assertEq(pendle.balanceOf(address(vault)), (aliceShares / 2 + bobShares / 2) , "Vault should have correct balance in pendle total - pending redemptions");
         assertEq(votingEscrowMainchain.balanceOf(address(vault)), DEPOSIT_AMOUNT * 3 - (aliceShares / 2 + bobShares / 2), "Vault should have correct balance in vependle");
         assertEq(vault.totalLockedPendle(), votingEscrowMainchain.balanceOf(address(vault)), "Vault locked pendle should equal vependle balance");
-        assertEq(vault.balanceOf(address(vault)), 0, "Vault should have 100% locked");
+
+        // claim fees
+        merkleDistributor.setClaimable(address(vault), 100e18);
+        vault.claimFees(100e18, new bytes32[](0));
+        assertEq(pendle.balanceOf(address(vault)), (aliceShares / 2 + bobShares / 2), "Vault should have correct balance in pendle");
+        assertEq(votingEscrowMainchain.balanceOf(address(vault)), DEPOSIT_AMOUNT * 3 - (aliceShares / 2 + bobShares / 2) + 100e18, "Vault should have correct balance in vependle");
+        assertEq(vault.totalLockedPendle(), votingEscrowMainchain.balanceOf(address(vault)), "Vault locked pendle should equal vependle balance");
+        // share value should have gone up
+        assertGt(vault.previewRedeemWithCurrentValues(aliceShares), aliceShares, "Share value should have gone up");
+        // snapshot value should be the same
+        assertEq(vault.previewRedeem(aliceShares), aliceShares, "Snapshot value should be the same");
     }
 
     function test_WithdrawalQueue() public {
