@@ -139,7 +139,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
             // get current pendle required to cover redemptions
             uint256 totalPendingRedemptions = totalPendingSharesPerEpoch[_vaultPosition.currentEpoch];
             uint256 totalPendingRedemptionsInAssets = convertToAssets(totalPendingRedemptions);
-            amountToLock =  _vaultPosition.aumPendle - totalPendingRedemptionsInAssets;
+            amountToLock = _vaultPosition.aumPendle - totalPendingRedemptionsInAssets;
         }
 
         if (amountToLock > 0) {
@@ -382,8 +382,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         rewardsSplit = _rewardsSplit;
     }
 
-
-
     function setOwner(address _owner) public onlyOwner {
         _setOwner(_owner);
     }
@@ -458,7 +456,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         return amountRedeemed;
     }
 
-
     function _lockPendle(uint256 amount, uint128 duration) internal {
         if (amount > totalSupply()) revert InvalidPendleBalance();
         SafeTransferLib.safeApprove(address(asset()), address(votingEscrowMainchain), amount);
@@ -496,7 +493,9 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
      */
     function previewRedeem(uint256 shares) public view override returns (uint256) {
         RedemptionSnapshot memory redemptionSnapshot = redemptionSnapshotPerEpoch[_vaultPosition.currentEpoch];
-        return FixedPointMathLib.fullMulDivUp(shares, redemptionSnapshot.aumPendleAtEpochStart, redemptionSnapshot.totalSupplyAtEpochStart);
+        return FixedPointMathLib.fullMulDivUp(
+            shares, redemptionSnapshot.aumPendleAtEpochStart, redemptionSnapshot.totalSupplyAtEpochStart
+        );
     }
 
     function redeem(uint256, /*shares */ address, /*to */ address /*owner*/ ) public pure override returns (uint256) {
