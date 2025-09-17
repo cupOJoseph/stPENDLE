@@ -9,6 +9,29 @@ Token and vault contract for institutional grade vePENDLE liquid staking.
 
 <hr>
 
+## Withdrawals and Redemption Queue (stPENDLE.sol)
+
+- **AUM-based accounting**: The vault tracks total PENDLE under management (AUM). Shares represent a pro‑rata claim on AUM. Conversions use AUM and `totalSupply()`:
+  - `convertToShares = fullMulDiv(assets, totalSupply, AUM)`
+  - `convertToAssets = fullMulDiv(shares, AUM, totalSupply)`
+- **Epoch-based queue**: Withdrawals are requested in shares and queued per epoch. Requests for the current epoch are not allowed; use the next epoch or a specific future epoch.
+- **How to request**: `requestRedemptionForEpoch(uint256 shares, uint256 epoch)` where `epoch = 0` means `currentEpoch + 1`. The vault records pending shares per user per epoch.
+- **Redemption window**: During each epoch, claims can be executed only within `preLockRedemptionPeriod` from the epoch start; outside the window, claims return 0.
+- **Claiming**: Users claim queued redemptions with `claimAvailableRedemptionShares(uint256 shares)` during the window.
+- **Snapshot and rate**:
+  - At the start of each epoch (`startNewEpoch()`), the vault snapshots `AUM` and `totalSupply` to derive a fixed assets‑per‑share rate for that epoch.
+  - All claims in that epoch settle at the snapshot rate (independent of intra‑epoch deposits/fees).
+- **Liquidity and epochs**:
+  - `startFirstEpoch()`: locks the vault’s entire PENDLE balance for the initial epoch.
+  - `startNewEpoch()`: withdraws matured vePENDLE, computes assets reserved for pending redemptions at the snapshot rate (clamped to unlocked), and re‑locks the remainder for `epochDuration`.
+- **Fees**: `claimFees(totalAccrued, proof)` increases AUM (no share mint). If the redemption window is closed, the vault may lock all currently unlocked PENDLE except what’s needed to honor reserved redemptions.
+- **Observability**: `getUserAvailableRedemption(address)`, `getTotalRequestedRedemptionAmountPerEpoch(uint256)`, `redemptionUsersForEpoch(uint256)`, `getAvailableRedemptionAmount()` (unlocked PENDLE balance), `previewVeWithdraw()`, and `previewRedeemWithCurrentValues(uint256)`.
+**⚠️ Important Limitations**
+- Standard ERC‑4626 `redeem`, `mint`, and `withdraw` functions are **disabled**
+- Withdrawals require epoch‑based queueing with specific timing windows
+- Claims outside redemption windows return **zero assets**
+- Current epoch requests are not allowed — minimum 1 epoch delay
+
 ## Dev Instructions 
 
 ## Foundry
