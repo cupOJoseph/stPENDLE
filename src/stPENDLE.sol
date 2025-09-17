@@ -326,6 +326,10 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         return _vaultPosition.epochDuration;
     }
 
+    function currentEpochStart() external view returns (uint256) {
+        return _vaultPosition.currentEpochStart;
+    }
+
     function preLockRedemptionPeriod() external view returns (uint256) {
         return _vaultPosition.preLockRedemptionPeriod;
     }

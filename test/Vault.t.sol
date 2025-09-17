@@ -319,6 +319,67 @@ contract stPENDLETest is Test {
         assertEq(vault.previewRedeem(aliceShares), aliceShares, "Snapshot value should be the same");
     }
 
+    function test_redeembeforeNewEpoch() public {
+        startFirstEpoch();
+        // Alice and Bob deposit
+        vm.startPrank(alice);
+        pendle.approve(address(vault), DEPOSIT_AMOUNT);
+        uint256 aliceShares = vault.deposit(DEPOSIT_AMOUNT, alice);
+        vm.stopPrank();
+        vm.startPrank(bob);
+        pendle.approve(address(vault), DEPOSIT_AMOUNT);
+        uint256 bobShares = vault.deposit(DEPOSIT_AMOUNT, bob);
+        vm.stopPrank();
+        assertEq(pendle.balanceOf(alice), INITIAL_BALANCE - DEPOSIT_AMOUNT, "Alice should have correct balance in pendle");
+        assertEq(vault.balanceOf(alice), DEPOSIT_AMOUNT, "Alice should have correct balance in vault");
+        assertEq(pendle.balanceOf(bob), INITIAL_BALANCE - bobShares, "Bob should have correct balance in pendle");
+        assertEq(vault.balanceOf(bob), bobShares, "Bob should have correct balance in vault");
+        assertEq(
+            votingEscrowMainchain.balanceOf(address(vault)),
+            DEPOSIT_AMOUNT * 3,
+            "Vault should have correct balance in vependle"
+        );
+        // request redemptions for next epoch
+        vm.startPrank(alice);
+        vault.requestRedemptionForEpoch(aliceShares / 2, 0);
+        vm.stopPrank();
+        vm.startPrank(bob);
+        vault.requestRedemptionForEpoch(bobShares / 2, 0);
+        vm.stopPrank();
+        // warp to pending epoch
+        vm.warp(block.timestamp + 30 days);
+        assertEq(vault.currentEpoch(), 2, "Should be in pending epoch");
+        assertEq(vault.currentEpochStart(), block.timestamp - 30 days, "Should have previous current epoch start");
+        // attempt to redeem before new epoch is started
+        vm.prank(alice);
+        vm.expectRevert(ISTPENDLE.OutsideRedemptionWindow.selector);
+        vault.claimAvailableRedemptionShares(aliceShares / 2);
+        assertEq(vault.getUserAvailableRedemption(alice), 0, "Alice shouldn't have current-epoch availability yet");        
+        // start new epoch
+        vm.prank(address(this));
+        vault.startNewEpoch();
+        assertEq(vault.currentEpoch(), 2, "Should have advanced to next epoch");
+        assertEq(vault.getAvailableRedemptionAmount(), aliceShares / 2 + bobShares / 2, "Should have correct available redemption amount");
+        assertEq(vault.getUserAvailableRedemption(alice), aliceShares / 2, "Alice should have correct available redemption amount");
+        assertEq(vault.getUserAvailableRedemption(bob), bobShares / 2, "Bob should have correct available redemption amount");
+        // redeem alice
+        vm.prank(alice);
+        vault.claimAvailableRedemptionShares(aliceShares / 2);
+        assertEq(vault.getUserAvailableRedemption(alice), 0, "Alice shouldn't have current-epoch availability anymore");
+        assertEq(pendle.balanceOf(alice), (INITIAL_BALANCE - DEPOSIT_AMOUNT) + (aliceShares / 2), "Alice should have correct balance in pendle");
+        assertEq(vault.balanceOf(alice), aliceShares / 2, "Alice should have correct balance in vault");
+        assertEq(votingEscrowMainchain.balanceOf(address(vault)), DEPOSIT_AMOUNT * 3 - (aliceShares / 2 + bobShares / 2), "Vault should have correct balance in vependle");
+        // redeem bob
+        vm.prank(bob);
+        vault.claimAvailableRedemptionShares(bobShares / 2);
+        assertEq(vault.getUserAvailableRedemption(bob), 0, "Bob shouldn't have current-epoch availability anymore");
+        assertEq(pendle.balanceOf(bob), INITIAL_BALANCE - bobShares + (bobShares / 2), "Bob should have correct balance in pendle");
+        assertEq(vault.balanceOf(bob), (bobShares / 2), "Bob should have correct balance in vault");
+        assertEq(votingEscrowMainchain.balanceOf(address(vault)), DEPOSIT_AMOUNT * 3 - (aliceShares / 2) - (bobShares / 2), "Vault should have correct balance in vependle");
+        assertEq(pendle.balanceOf(address(vault)), 0, "Vault should have no balance in pendle");
+    }
+    
+
     function test_WithdrawalQueue() public {
         startFirstEpoch();
         // Alice and Bob deposit
