@@ -245,6 +245,7 @@ contract stPENDLETest is Test {
     }
 
     function test_ClaimFeesInPENDLE() public {
+        startFirstEpoch();
         // Setup claimable fees
         merkleDistributor.setClaimable(address(vault), 100e18);
 
@@ -256,12 +257,55 @@ contract stPENDLETest is Test {
         vault.claimFees(100e18, new bytes32[](0));
 
         // Check that fee was distributed in PENDLE
-        // assertEq(pendle.balanceOf(feeReceiver), 5e18, "Fee receiver should get 5% in PENDLE");
-        uint256 totalPendleUnderManagement = vault.totalSupply();
+
         uint256 totalPendleLocked = vault.totalLockedPendle();
-        assertEq(totalPendleLocked, 100e18, "Vault should have 100% locked");
-        assertEq(totalPendleUnderManagement, 100e18, "Vault should have 100% locked");
-        assertEq(votingEscrowMainchain.balanceOf(address(vault)), 100e18, "Vault should have 95% locked");
+        uint256 totalPendleUnderManagement = vault.totalAssets();
+        assertEq(totalPendleLocked, 200e18, "Vault should have 100% locked");
+        assertEq(totalPendleUnderManagement, 200e18, "Vault should have 100% locked");
+        assertEq(votingEscrowMainchain.balanceOf(address(vault)), 200e18, "Vault should have 95% locked");
+        assertEq(pendle.balanceOf(address(vault)), 0, "Vault should have 100% locked");
+    }
+
+    function test_claimableFeesWithPendingRedemptions() public {
+        startFirstEpoch();
+        // Alice and Bob deposit
+        vm.startPrank(alice);
+        pendle.approve(address(vault), DEPOSIT_AMOUNT);
+        uint256 aliceShares = vault.deposit(DEPOSIT_AMOUNT, alice);
+        vm.stopPrank();
+        vm.startPrank(bob);
+        pendle.approve(address(vault), DEPOSIT_AMOUNT);
+        uint256 bobShares = vault.deposit(DEPOSIT_AMOUNT, bob);
+        vm.stopPrank();
+        assertEq(pendle.balanceOf(alice), INITIAL_BALANCE - DEPOSIT_AMOUNT, "Alice should have correct balance in pendle");
+        assertEq(vault.balanceOf(alice), DEPOSIT_AMOUNT, "Alice should have correct balance in vault");
+        assertEq(pendle.balanceOf(bob), INITIAL_BALANCE - DEPOSIT_AMOUNT, "Bob should have correct balance in pendle");
+        assertEq(vault.balanceOf(bob), DEPOSIT_AMOUNT, "Bob should have correct balance in vault");
+        assertEq(
+            votingEscrowMainchain.balanceOf(address(vault)),
+            DEPOSIT_AMOUNT * 3,
+            "Vault should have correct balance in vependle"
+        );
+        // Alice and Bob request redemption
+        vm.startPrank(alice);
+        vault.requestRedemptionForEpoch(aliceShares / 2, 0);
+        vm.stopPrank();
+        vm.startPrank(bob);
+        vault.requestRedemptionForEpoch(bobShares / 2, 0);
+        vm.stopPrank();
+        // warp to pending epoch
+        vm.warp(block.timestamp + 30 days);
+        // start new epoch
+        vm.prank(address(this));
+        vault.startNewEpoch();
+        assertEq(vault.currentEpoch(), 2, "Should have advanced to next epoch");
+        assertEq(vault.getAvailableRedemptionAmount(), aliceShares / 2 + bobShares / 2, "Should have correct available redemption amount");
+        assertEq(vault.getUserAvailableRedemption(alice), aliceShares / 2, "Alice should have correct available redemption amount");
+        assertEq(vault.getUserAvailableRedemption(bob), bobShares / 2, "Bob should have correct available redemption amount");
+        assertEq(pendle.balanceOf(address(vault)), (aliceShares / 2 + bobShares / 2) , "Vault should have correct balance in pendle");
+        assertEq(votingEscrowMainchain.balanceOf(address(vault)), DEPOSIT_AMOUNT * 3 - (aliceShares / 2 + bobShares / 2), "Vault should have correct balance in vependle");
+        assertEq(vault.totalLockedPendle(), votingEscrowMainchain.balanceOf(address(vault)), "Vault locked pendle should equal vependle balance");
+        assertEq(vault.balanceOf(address(vault)), 0, "Vault should have 100% locked");
     }
 
     function test_WithdrawalQueue() public {
@@ -472,7 +516,7 @@ contract stPENDLETest is Test {
 
         vm.expectRevert(ISTPENDLE.EpochDurationInvalid.selector);
         vm.prank(address(timelockController));
-        vault.setEpochDuration(900 days); // More than 7 days
+        vault.setEpochDuration(900 days); // More than maximum allowed
     }
 
     function test_RevertInvalidFeeReceiver() public {

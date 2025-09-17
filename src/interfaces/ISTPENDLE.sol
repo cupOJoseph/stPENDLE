@@ -8,12 +8,20 @@ import {IERC4626} from "lib/forge-std/src/interfaces/IERC4626.sol";
 
 interface ISTPENDLE {
     struct VaultPosition {
+        uint256 aumPendle;
         uint256 totalLockedPendle;
         uint256 currentEpoch;
         uint128 epochDuration;
         uint256 lastEpochUpdate;
         uint256 currentEpochStart;
         uint256 preLockRedemptionPeriod;
+    }
+
+    struct RedemptionSnapshot {
+        uint256 aumPendleAtEpochStart;
+        uint256 totalSupplyAtEpochStart;
+        uint256 reservedAssetsAtEpochStart;
+        uint256 epochStartTimestamp;
     }
 
     // -------- External state-changing --------

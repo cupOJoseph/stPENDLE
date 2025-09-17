@@ -21,7 +21,11 @@ Token and vault contract for institutional grade vePENDLE liquid staking.
   - `startNewEpoch()`: withdraws matured vePENDLE, reserves assets equal to pending shares for the new epoch, and re-locks remaining assets for `epochDuration`.
 - **Observability**: `getUserAvailableRedemption(address)`, `getTotalRequestedRedemptionAmountPerEpoch(uint256)`, `redemptionUsersForEpoch(uint256)`, `getAvailableRedemptionAmount()` (unlocked PENDLE balance), and `previewVeWithdraw()` expose queue and liquidity state.
 - **Fees**: `claimFees(totalAccrued, proof)` mints vault shares equal to fees received to maintain the 1:1 invariant, then locks either the claimed amount or all unlocked assets depending on whether the redemption window is open.
-- **ERC-4626 overrides**: Direct `redeem`, `mint`, and `withdraw` are disabled (revert). Use the queue flow.
+**⚠️ Important Limitations**
+- Standard ERC-4626 `redeem`, `mint`, and `withdraw` functions are **disabled**
+- Withdrawals require epoch-based queueing with specific timing windows
+- Claims outside redemption windows return **zero assets**
+- Current epoch requests are not allowed - minimum 1 epoch delay
 
 ## Dev Instructions 
 
