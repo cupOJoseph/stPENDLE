@@ -11,9 +11,9 @@ Token and vault contract for institutional grade vePENDLE liquid staking.
 
 ## Withdrawals and Redemption Queue (stPENDLE.sol)
 
-- **AUM-based accounting**: The vault tracks total PENDLE under management (AUM). Shares represent a pro‑rata claim on AUM. Conversions use AUM and `totalSupply()` with rounding up (`fullMulDivUp`):
-  - `convertToShares = fullMulDivUp(assets, totalSupply, AUM)`
-  - `convertToAssets = fullMulDivUp(shares, AUM, totalSupply)`
+- **AUM-based accounting**: The vault tracks total PENDLE under management (AUM). Shares represent a pro‑rata claim on AUM. Conversions use AUM and `totalSupply()`:
+  - `convertToShares = fullMulDiv(assets, totalSupply, AUM)`
+  - `convertToAssets = fullMulDiv(shares, AUM, totalSupply)`
 - **Epoch-based queue**: Withdrawals are requested in shares and queued per epoch. Requests for the current epoch are not allowed; use the next epoch or a specific future epoch.
 - **How to request**: `requestRedemptionForEpoch(uint256 shares, uint256 epoch)` where `epoch = 0` means `currentEpoch + 1`. The vault records pending shares per user per epoch.
 - **Redemption window**: During each epoch, claims can be executed only within `preLockRedemptionPeriod` from the epoch start; outside the window, claims return 0.
