@@ -484,6 +484,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     }
 
     // ERC 4626 overrides
+
     function totalAssets() public view override returns (uint256) {
         return _vaultPosition.aumPendle;
     }
@@ -495,11 +496,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
      */
     function previewRedeem(uint256 shares) public view override returns (uint256) {
         RedemptionSnapshot memory redemptionSnapshot = redemptionSnapshotPerEpoch[_vaultPosition.currentEpoch];
-        return shares * redemptionSnapshot.aumPendleAtEpochStart / redemptionSnapshot.totalSupplyAtEpochStart;
-    }
-
-    function previewDeposit(uint256 assets) public pure override returns (uint256) {
-        return assets;
+        return FixedPointMathLib.fullMulDivUp(shares, redemptionSnapshot.aumPendleAtEpochStart, redemptionSnapshot.totalSupplyAtEpochStart);
     }
 
     function redeem(uint256, /*shares */ address, /*to */ address /*owner*/ ) public pure override returns (uint256) {
