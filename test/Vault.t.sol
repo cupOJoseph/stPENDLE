@@ -228,6 +228,28 @@ contract stPENDLETest is Test {
         vm.stopPrank();
     }
 
+    function test_startFirstEpoch() public {
+        startFirstEpoch();
+        assertEq(vault.currentEpoch(), 1, "epoch should be 1");
+        assertEq(vault.currentEpochStart(), block.timestamp, "epoch start should be current timestamp");
+        assertEq(vault.epochDuration(), 30 days, "epoch duration should be 30 days");
+        assertEq(vault.totalLockedPendle(), DEPOSIT_AMOUNT, "total locked pendle should be initial deposit");
+        assertEq(vault.totalSupply(), DEPOSIT_AMOUNT, "total supply should be initial deposit");
+        assertEq(vault.totalSupply(), DEPOSIT_AMOUNT, "vault should have initial deposit");
+    }
+    
+    function test_startFirstEpoch_RevertsIfCalledAfterFirstEpoch() public {
+        startFirstEpoch();
+        vm.expectRevert(ISTPENDLE.InvalidEpoch.selector);
+        vault.startFirstEpoch();
+    }
+
+    function test_startFirstEpoch_RevertInvalidPendleBalance() public {
+        pendle.mint(address(this), 0);
+        vm.expectRevert(ISTPENDLE.InvalidPendleBalance.selector);
+        vault.startFirstEpoch();
+    }
+
     function test_Constructor() public view {
         assertEq(address(vault.votingEscrowMainchain()), address(votingEscrowMainchain));
         assertEq(address(vault.merkleDistributor()), address(merkleDistributor));
@@ -306,8 +328,8 @@ contract stPENDLETest is Test {
         vm.startPrank(bob);
         vault.requestRedemptionForEpoch(bobShares / 2, 0);
         vm.stopPrank();
-        // warp to pending epoch
-        vm.warp(block.timestamp + 30 days);
+        // warp to epoch boundary
+        vm.warp(vault.currentEpochStart() + vault.epochDuration());
         // start new epoch
         vm.prank(address(this));
         vault.startNewEpoch();
@@ -346,6 +368,28 @@ contract stPENDLETest is Test {
         assertEq(vault.previewRedeem(aliceShares), aliceShares, "Snapshot value should be the same");
     }
 
+    function test_StartNewEpoch() public {
+        // Setup: start first epoch (locks initial deposit and sets epoch timing)
+        startFirstEpoch();
+
+        uint256 start = vault.currentEpochStart();
+        uint128 dur = vault.epochDuration();
+
+        // Too early: should revert
+        vm.expectRevert(ISTPENDLE.EpochNotEnded.selector);
+        vault.startNewEpoch();
+
+        // Just before boundary: still revert
+        vm.warp(start + dur - 1);
+        vm.expectRevert(ISTPENDLE.EpochNotEnded.selector);
+        vault.startNewEpoch();
+
+        // At boundary or later: should succeed
+        vm.warp(start + dur);
+        vault.startNewEpoch();
+        assertEq(vault.currentEpoch(), 2, "epoch should advance at or after boundary");
+    }
+
     function test_redeembeforeNewEpoch() public {
         startFirstEpoch();
         // Alice and Bob deposit
@@ -375,10 +419,8 @@ contract stPENDLETest is Test {
         vm.startPrank(bob);
         vault.requestRedemptionForEpoch(bobShares / 2, 0);
         vm.stopPrank();
-        // warp to pending epoch
-        vm.warp(block.timestamp + 30 days);
-        assertEq(vault.currentEpoch(), 2, "Should be in pending epoch");
-        assertEq(vault.currentEpochStart(), block.timestamp - 30 days, "Should have previous current epoch start");
+        // warp to epoch boundary
+        vm.warp(vault.currentEpochStart() + vault.epochDuration());
         // attempt to redeem before new epoch is started
         vm.prank(alice);
         vm.expectRevert(ISTPENDLE.OutsideRedemptionWindow.selector);
@@ -480,8 +522,8 @@ contract stPENDLETest is Test {
         vm.expectRevert(ISTPENDLE.NoPendingRedemption.selector);
         vault.claimAvailableRedemptionShares(aliceRequestShares);
 
-        // warp to pending epoch
-        vm.warp(block.timestamp + 30 days);
+        // warp to epoch boundary
+        vm.warp(vault.currentEpochStart() + vault.epochDuration());
 
         assertEq(vault.currentEpoch(), 2, "Should have advanced to next epoch");
         // start new epoch
@@ -533,18 +575,6 @@ contract stPENDLETest is Test {
         // (balances asserted via deltas earlier)
     }
 
-    function test_startFirstEpoch() public {
-        vm.startPrank(alice);
-        pendle.approve(address(vault), DEPOSIT_AMOUNT);
-        vault.depositBeforeFirstEpoch(DEPOSIT_AMOUNT, alice);
-        vm.stopPrank();
-
-        vault.startFirstEpoch();
-        assertEq(vault.currentEpoch(), 1, "Should have started first epoch");
-        assertEq(vault.totalSupply(), DEPOSIT_AMOUNT, "total supply should be equal to initial balance");
-        assertEq(vault.totalLockedPendle(), DEPOSIT_AMOUNT, "total locked pendle should be equal to initial balance");
-        assertEq(votingEscrowMainchain.balanceOf(address(vault)), DEPOSIT_AMOUNT, "Should have all PENDLE locked");
-    }
 
     function test_GetNextEpochWithdrawalAmount() public {
         startFirstEpoch();
@@ -567,7 +597,7 @@ contract stPENDLETest is Test {
         vault.requestRedemptionForEpoch(bobShares / 2, requestEpoch);
 
         // Advance to next epoch and start
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(vault.currentEpochStart() + vault.epochDuration());
         vm.prank(address(this));
         vault.startNewEpoch();
 
@@ -595,7 +625,7 @@ contract stPENDLETest is Test {
         vault.claimAvailableRedemptionShares(aliceShares / 4);
 
         // Advance and start next epoch: can claim
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(vault.currentEpochStart() + vault.epochDuration());
         vm.prank(address(this));
         vault.startNewEpoch();
 
@@ -692,7 +722,7 @@ contract stPENDLETest is Test {
         vault.requestRedemptionForEpoch(aliceShares, 0);
 
         // Advance time and roll epoch
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(vault.currentEpochStart() + vault.epochDuration());
         vm.prank(address(this));
         vault.startNewEpoch();
 
@@ -720,7 +750,7 @@ contract stPENDLETest is Test {
         assertEq(vault.previewRedeem(aliceShares / 2), 0, "preview redeem should be 0");
 
         // Roll epoch to set snapshot
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(vault.currentEpochStart() + vault.epochDuration());
         // before epoch is updated, preview redeem should be 0
         assertEq(vault.previewRedeem(aliceShares / 2), 0, "preview redeem should be 0");
 
@@ -777,7 +807,7 @@ contract stPENDLETest is Test {
         vault.requestRedemptionForEpoch(1e18, requestEpoch);
 
         // Step 4: roll epoch to take snapshot (AUM ~= 100e18, supply 3e18)
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(vault.currentEpochStart() + vault.epochDuration());
         vm.prank(address(this));
         vault.startNewEpoch();
 
@@ -869,7 +899,7 @@ contract stPENDLETest is Test {
         // Request for next epoch and roll, then claim works
         vm.prank(alice);
         vault.requestRedemptionForEpoch(DEPOSIT_AMOUNT, 0); // next epoch
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(vault.currentEpochStart() + vault.epochDuration());
         vm.prank(address(this));
         vault.startNewEpoch();
 

@@ -421,7 +421,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     /// =========== Internal Functions ================ ///
 
     function _requireNextEpoch() internal view {
-        if (_calculateEpoch(block.timestamp) < _calculateEpoch(_vaultPosition.currentEpochStart) + 1) {
+        if (block.timestamp < _vaultPosition.currentEpochStart + _vaultPosition.epochDuration) {
             revert EpochNotEnded();
         }
     }
