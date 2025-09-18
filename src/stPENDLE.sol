@@ -26,6 +26,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     uint256 public constant ADMIN_ROLE = _ROLE_0;
     uint256 public constant TIMELOCK_CONTROLLER_ROLE = _ROLE_1;
 
+    uint256 public constant FEE_BASIS_POINTS = 1e18; // 1e18 = 100%
+
     // interfaces
     IPMerkleDistributor public merkleDistributor;
     IPVotingEscrowMainchain public votingEscrowMainchain;
@@ -33,11 +35,15 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
 
     address public immutable ASSET;
     // settings
-    bool public feeSwitchIsEnabled = false;
-    uint256 public feeBasisPoints = 0;
     address public feeReceiver;
     bool public paused = false;
-    uint256 public rewardsSplit = 0;
+
+    // Fee split using 1e18 precision (holders + LP + protocol <= 1e18)
+    uint256 public rewardsSplitHolders; // default: 100% to holders (AUM)
+    uint256 public rewardsSplitLp;
+
+    uint256 public rewardsSplitProtocolX18 = 0;
+    address public lpFeeReceiver;
 
     // Epoch management
 
@@ -69,16 +75,32 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         address _votingControllerAddress,
         address _timelockController,
         address _admin,
+        address _lpFeeReceiver,
+        address _feeReceiver,
         uint256 _preLockRedemptionPeriod,
         uint256 _epochDuration
     ) {
+        if (_lpFeeReceiver == address(0)) revert InvalidFeeReceiver();
+        if (_feeReceiver == address(0)) revert InvalidFeeReceiver();
+        if (_admin == address(0)) revert InvalidAdmin();
+        if (_timelockController == address(0)) revert InvalidTimelockController();
+        if (_pendleTokenAddress == address(0)) revert InvalidPendleToken();
+        if (_merkleDistributorAddress == address(0)) revert InvalidMerkleDistributor();
+        if (_votingEscrowMainchain == address(0)) revert InvalidVotingEscrowMainchain();
+        if (_votingControllerAddress == address(0)) revert InvalidVotingController();
+        if (_preLockRedemptionPeriod == 0) revert InvalidPreLockRedemptionPeriod();
+        if (_epochDuration == 0) revert InvalidEpochDuration();
+
         votingEscrowMainchain = IPVotingEscrowMainchain(_votingEscrowMainchain);
         merkleDistributor = IPMerkleDistributor(_merkleDistributorAddress);
         votingController = IPVotingController(_votingControllerAddress);
         ASSET = _pendleTokenAddress;
         _vaultPosition.preLockRedemptionPeriod = _preLockRedemptionPeriod;
         _vaultPosition.epochDuration = _safeCast128(_epochDuration);
-
+        rewardsSplitHolders = 9e17;  // 90% to holders (AUM)
+        rewardsSplitLp = 1e17;  // 10% to LP
+        lpFeeReceiver = _lpFeeReceiver;
+        feeReceiver = _feeReceiver;
         _initializeOwner(address(msg.sender));
         _grantRoles(_admin, ADMIN_ROLE);
         _grantRoles(_timelockController, TIMELOCK_CONTROLLER_ROLE);
@@ -130,19 +152,32 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         if (totalAccrued == 0) revert InvalidAmount();
         // will revert if proof or totalAccrued is invalid
         uint256 amountClaimed = merkleDistributor.claim(address(this), totalAccrued, proof);
-        _vaultPosition.aumPendle += amountClaimed;
         emit FeesClaimed(amountClaimed, block.timestamp);
 
-        // If redemption window has closed, lock all currently unlocked PENDLE
-        uint256 amountToLock = amountClaimed;
-        if (!_isWithinRedemptionWindow()) {
-            // get current pendle required to cover redemptions
-            uint256 totalPendingRedemptions = totalPendingSharesPerEpoch[_vaultPosition.currentEpoch];
-            uint256 totalPendingRedemptionsInAssets = convertToAssets(totalPendingRedemptions);
-            amountToLock = _vaultPosition.aumPendle - totalPendingRedemptionsInAssets;
+        // Split fees (1e18 precision): holders (AUM), LP (transfer), protocol (transfer)
+        uint256 holdersAmount = FixedPointMathLib.fullMulDiv(amountClaimed, rewardsSplitHolders, FEE_BASIS_POINTS);
+        uint256 lpAmount = FixedPointMathLib.fullMulDiv(amountClaimed, rewardsSplitLp, FEE_BASIS_POINTS);
+        uint256 protocolAmount = amountClaimed - holdersAmount - lpAmount; // remainder to protocol
+
+        if (holdersAmount != 0) {
+            _vaultPosition.aumPendle += holdersAmount;
+        }
+        
+        if (lpAmount != 0) {
+            SafeTransferLib.safeTransfer(asset(), lpFeeReceiver, lpAmount);
         }
 
-        if (amountToLock > 0) {
+        if (protocolAmount != 0) {
+            SafeTransferLib.safeTransfer(asset(), feeReceiver, protocolAmount);
+        }
+
+        // Lock behavior
+        uint256 amountToLock = holdersAmount; // lock the portion kept by holders by default
+        if (!_isWithinRedemptionWindow()) {
+            // Lock all currently unlocked PENDLE
+            amountToLock = SafeTransferLib.balanceOf(asset(), address(this));
+        }
+        if (amountToLock != 0) {
             _lockPendle(amountToLock, 0);
         }
     }
@@ -328,6 +363,14 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         return totalPendingSharesPerEpoch[epoch];
     }
 
+    function feeBasisPoints() external view returns (uint256) {
+        return FEE_BASIS_POINTS;
+    }
+
+    function rewardsSplit() external view returns (uint256, uint256){
+        return (rewardsSplitHolders, rewardsSplitLp);
+    }
+
     /**
      * @notice Convenience function to preview the amount of PENDLE that can be redeemed for the given shares according to the current values
      * @param shares Amount of shares to redeem
@@ -339,21 +382,23 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
 
     /// =========== Governance Council Functions ================ ///
 
-    function setFeeSwitch(bool enabled) public onlyRoles(ADMIN_ROLE) {
-        feeSwitchIsEnabled = enabled;
-        emit FeeSwitchSet(enabled);
-    }
-
-    function setFeeBasisPoints(uint256 basisPoints) public onlyRoles(ADMIN_ROLE) {
-        if (basisPoints > 1000) revert InvalidFeeBasisPoints();
-        feeBasisPoints = basisPoints;
-        emit FeeBasisPointsSet(basisPoints);
+    function setrewardsSplit(uint256 holders, uint256 lp) public onlyRoles(ADMIN_ROLE) {
+        if (holders + lp > 1e18) revert InvalidrewardsSplit();
+        rewardsSplitHolders = holders;
+        rewardsSplitLp = lp;
+        emit rewardsSplitSet(holders, lp);
     }
 
     function setFeeReceiver(address _feeReceiver) public onlyRoles(ADMIN_ROLE) {
         if (_feeReceiver == address(0)) revert InvalidFeeReceiver(); // 0 address is not allowed
         feeReceiver = _feeReceiver;
         emit FeeReceiverSet(feeReceiver);
+    }
+
+    function setLpFeeReceiver(address _lpFeeReceiver) public onlyRoles(ADMIN_ROLE) {
+        if (_lpFeeReceiver == address(0)) revert InvalidFeeReceiver(); // 0 address is not allowed
+        lpFeeReceiver = _lpFeeReceiver;
+        emit LpFeeReceiverSet(lpFeeReceiver);
     }
 
     function setEpochDuration(uint128 _duration) public onlyRoles(TIMELOCK_CONTROLLER_ROLE) {
@@ -363,9 +408,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         emit EpochDurationSet(_duration);
     }
 
-    function setRewardsSplit(uint256 _rewardsSplit) public onlyRoles(TIMELOCK_CONTROLLER_ROLE) {
-        if (_rewardsSplit > 100) revert InvalidRewardsSplit();
-        rewardsSplit = _rewardsSplit;
+    function setRewardsSplit(uint256 holders, uint256 lp) public onlyRoles(TIMELOCK_CONTROLLER_ROLE) {
+        if (holders + lp > 1e18) revert InvalidrewardsSplit();
+        rewardsSplitHolders = holders;
+        rewardsSplitLp = lp;
+        emit rewardsSplitSet(holders, lp);
     }
 
     function setOwner(address _owner) public onlyOwner {

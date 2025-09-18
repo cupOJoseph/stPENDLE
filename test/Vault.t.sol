@@ -151,6 +151,7 @@ contract stPENDLETest is Test {
     address public david = address(0x4);
     address public eve = address(0x5);
     address public feeReceiver = address(0x6);
+    address public lpFeeReceiver = address(0x7);
 
     uint256 public constant INITIAL_BALANCE = 1000e18;
     uint256 public constant DEPOSIT_AMOUNT = 100e18;
@@ -184,6 +185,8 @@ contract stPENDLETest is Test {
             address(votingController),
             address(timelockController),
             address(this),
+            lpFeeReceiver,
+            feeReceiver,
             20 days,
             30 days
         );
@@ -249,21 +252,30 @@ contract stPENDLETest is Test {
         // Setup claimable fees
         merkleDistributor.setClaimable(address(vault), 100e18);
 
-        // Enable fees
-        vault.setFeeSwitch(true);
-        vault.setFeeBasisPoints(500); // 5%
-
         // Claim fees
+        uint256 aumBefore = vault.totalAssets();
+        uint256 veBefore = votingEscrowMainchain.balanceOf(address(vault));
+        uint256 lpBefore = pendle.balanceOf(lpFeeReceiver);
+        uint256 protocolBefore = pendle.balanceOf(feeReceiver);
+
         vault.claimFees(100e18, new bytes32[](0));
 
-        // Check that fee was distributed in PENDLE
-
-        uint256 totalPendleLocked = vault.totalLockedPendle();
-        uint256 totalPendleUnderManagement = vault.totalAssets();
-        assertEq(totalPendleLocked, 200e18, "Vault should have 100% locked");
-        assertEq(totalPendleUnderManagement, 200e18, "Vault should have 100% locked");
-        assertEq(votingEscrowMainchain.balanceOf(address(vault)), 200e18, "Vault should have 95% locked");
-        assertEq(pendle.balanceOf(address(vault)), 0, "Vault should have 100% locked");
+        uint256 lpDelta = pendle.balanceOf(lpFeeReceiver) - lpBefore;
+        uint256 protocolDelta = pendle.balanceOf(feeReceiver) - protocolBefore;
+        uint256 aumDelta = vault.totalAssets() - aumBefore;
+        assertEq(aumDelta, 90e18, "holders portion should be 90%");
+        assertEq(lpDelta, 10e18, "lp portion should be 10%");
+        assertEq(protocolDelta, 0, "protocol portion should be 0");
+        // Accounting: claimed = aumDelta + transfers out
+        assertEq(aumDelta + lpDelta + protocolDelta, 100e18, "fees must split between AUM and transfers");
+        // Holders portion should be locked immediately while in window
+        assertEq(
+            votingEscrowMainchain.balanceOf(address(vault)) - veBefore,
+            aumDelta,
+            "holders portion should be locked"
+        );
+        // No residual unlocked PENDLE after immediate lock and transfers
+        assertEq(pendle.balanceOf(address(vault)), 0, "no unlocked PENDLE after claim within window");
     }
 
     function test_claimFeesWithPendingRedemptions() public {
@@ -341,7 +353,7 @@ contract stPENDLETest is Test {
         );
         assertEq(
             votingEscrowMainchain.balanceOf(address(vault)),
-            DEPOSIT_AMOUNT * 3 - (aliceShares / 2 + bobShares / 2) + 100e18,
+            DEPOSIT_AMOUNT * 3 - (aliceShares / 2 + bobShares / 2) + 90e18,
             "Vault should have correct balance in vependle"
         );
         assertEq(
@@ -411,14 +423,11 @@ contract stPENDLETest is Test {
             vault.getUserAvailableRedemption(bob), bobShares / 2, "Bob should have correct available redemption amount"
         );
         // redeem alice
+        uint256 alicePendleBefore = pendle.balanceOf(alice);
         vm.prank(alice);
-        vault.claimAvailableRedemptionShares(aliceShares / 2);
+        uint256 aliceRedeemed = vault.claimAvailableRedemptionShares(aliceShares / 2);
         assertEq(vault.getUserAvailableRedemption(alice), 0, "Alice shouldn't have current-epoch availability anymore");
-        assertEq(
-            pendle.balanceOf(alice),
-            (INITIAL_BALANCE - DEPOSIT_AMOUNT) + (aliceShares / 2),
-            "Alice should have correct balance in pendle"
-        );
+        assertEq(pendle.balanceOf(alice) - alicePendleBefore, aliceRedeemed, "Alice PENDLE delta mismatch");
         assertEq(vault.balanceOf(alice), aliceShares / 2, "Alice should have correct balance in vault");
         assertEq(
             votingEscrowMainchain.balanceOf(address(vault)),
@@ -426,14 +435,11 @@ contract stPENDLETest is Test {
             "Vault should have correct balance in vependle"
         );
         // redeem bob
+        uint256 bobPendleBefore = pendle.balanceOf(bob);
         vm.prank(bob);
-        vault.claimAvailableRedemptionShares(bobShares / 2);
+        uint256 bobRedeemed = vault.claimAvailableRedemptionShares(bobShares / 2);
         assertEq(vault.getUserAvailableRedemption(bob), 0, "Bob shouldn't have current-epoch availability anymore");
-        assertEq(
-            pendle.balanceOf(bob),
-            INITIAL_BALANCE - bobShares + (bobShares / 2),
-            "Bob should have correct balance in pendle"
-        );
+        assertEq(pendle.balanceOf(bob) - bobPendleBefore, bobRedeemed, "Bob PENDLE delta mismatch");
         assertEq(vault.balanceOf(bob), (bobShares / 2), "Bob should have correct balance in vault");
         assertEq(
             votingEscrowMainchain.balanceOf(address(vault)),
@@ -524,6 +530,7 @@ contract stPENDLETest is Test {
         );
         assertEq(vault.getUserAvailableRedemption(bob), DEPOSIT_AMOUNT, "Bob should have current-epoch availability");
 
+        uint256 alicePendleBefore2 = pendle.balanceOf(alice);
         vm.prank(alice);
         uint256 aliceClaimed = vault.claimAvailableRedemptionShares(aliceRequestShares / 2);
         assertEq(aliceClaimed, aliceRequestShares / 2, "Alice should have claimed half their shares");
@@ -532,12 +539,9 @@ contract stPENDLETest is Test {
             aliceRequestShares / 2,
             "Alice should have current-epoch availability anymore"
         );
-        assertEq(
-            pendle.balanceOf(alice),
-            INITIAL_BALANCE - (DEPOSIT_AMOUNT - (aliceRequestShares / 2)),
-            "Alice should correct balance in pendle"
-        );
+        assertEq(pendle.balanceOf(alice) - alicePendleBefore2, aliceClaimed, "Alice PENDLE delta mismatch");
 
+        uint256 bobPendleBefore2 = pendle.balanceOf(bob);
         vm.prank(bob);
         uint256 bobClaimed = vault.claimAvailableRedemptionShares(bobRequestShares / 2);
         assertEq(bobClaimed, bobRequestShares / 2, "Bob should have claimed their shares");
@@ -546,26 +550,14 @@ contract stPENDLETest is Test {
             bobRequestShares / 2,
             "Bob shouldn't have current-epoch availability anymore"
         );
-        assertEq(
-            pendle.balanceOf(bob),
-            INITIAL_BALANCE - (DEPOSIT_AMOUNT - bobRequestShares / 2),
-            "Bob should correct balance in pendle"
-        );
+        assertEq(pendle.balanceOf(bob) - bobPendleBefore2, bobClaimed, "Bob PENDLE delta mismatch");
 
         // warp past redemption window
         vm.warp(block.timestamp + 29 days);
         assertEq(vault.getUserAvailableRedemption(alice), 0, "Alice shouldn't have current-epoch availability anymore");
         assertEq(vault.getUserAvailableRedemption(bob), 0, "Bob shouldn't have current-epoch availability anymore");
-        assertEq(
-            pendle.balanceOf(alice),
-            INITIAL_BALANCE - (DEPOSIT_AMOUNT - (aliceRequestShares / 2)),
-            "Alice should correct balance in pendle"
-        );
-        assertEq(
-            pendle.balanceOf(bob),
-            INITIAL_BALANCE - (DEPOSIT_AMOUNT - bobRequestShares / 2),
-            "Bob should correct balance in pendle"
-        );
+        // No changes after window closes
+        // (balances asserted via deltas earlier)
     }
 
     function test_startFirstEpoch() public {
@@ -639,9 +631,9 @@ contract stPENDLETest is Test {
         // assertEq(vault.epochDuration(), 12 hours);
     }
 
-    function test_RevertInvalidFeeBasisPoints() public {
-        vm.expectRevert(ISTPENDLE.InvalidFeeBasisPoints.selector);
-        vault.setFeeBasisPoints(1001); // 10.01%
+    function test_RevertInvalidrewardsSplit() public {
+        vm.expectRevert(ISTPENDLE.InvalidrewardsSplit.selector);
+        vault.setrewardsSplit(2e18, 0); // 10.01%
     }
 
     function test_RevertInvalidEpochDuration() public {

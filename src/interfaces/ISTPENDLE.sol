@@ -45,11 +45,9 @@ interface ISTPENDLE {
     function votingEscrowMainchain() external view returns (IPVotingEscrowMainchain);
     function votingController() external view returns (IPVotingController);
     function ASSET() external view returns (address);
-    function feeSwitchIsEnabled() external view returns (bool);
     function feeBasisPoints() external view returns (uint256);
     function feeReceiver() external view returns (address);
     function paused() external view returns (bool);
-    function rewardsSplit() external view returns (uint256);
     function epochDuration() external view returns (uint128);
     function preLockRedemptionPeriod() external view returns (uint256);
     function totalLockedPendle() external view returns (uint256);
@@ -62,11 +60,9 @@ interface ISTPENDLE {
     function redemptionUsersPerEpoch(uint256 epoch, uint256 index) external view returns (address);
 
     // -------- Governance/admin --------
-    function setFeeSwitch(bool enabled) external;
-    function setFeeBasisPoints(uint256 basisPoints) external;
     function setFeeReceiver(address _feeReceiver) external;
     function setEpochDuration(uint128 _duration) external;
-    function setRewardsSplit(uint256 _rewardsSplit) external;
+    function setRewardsSplit(uint256 holders, uint256 lp) external;
     function setOwner(address _owner) external;
     function pause() external;
     function unpause() external;
@@ -86,6 +82,8 @@ interface ISTPENDLE {
     event FeesDistributed(uint256 pendleAmount, uint256 usdtAmount);
     event Paused(bool paused);
     event RedemptionExpired(address indexed user, uint256 amount);
+    event rewardsSplitSet(uint256 holders, uint256 lp);
+    event LpFeeReceiverSet(address lpFeeReceiver);
     //test
 
     error InvalidPendleBalance();
@@ -97,6 +95,7 @@ interface ISTPENDLE {
     error InsufficientShares();
     error InvalidRedemptionAmount(uint256 withdrawnAmount, uint256 availableForRedemption);
     error InvalidFeeBasisPoints();
+    error InvalidFeeSplit();
     error IsPaused();
     error OutsideRedemptionWindow();
     error InvalidRedemption();
@@ -107,4 +106,14 @@ interface ISTPENDLE {
     error InvalidFeeReceiver();
     error InvalidRewardsSplit();
     error InvalidReceiver();
+    error InvalidrewardsSplit();
+    error InvalidAdmin();
+    error InvalidTimelockController();
+    error InvalidPendleToken();
+    error InvalidMerkleDistributor();
+    error InvalidVotingEscrowMainchain();
+    error InvalidVotingController();
+    error InvalidPreLockRedemptionPeriod();
+    error InvalidEpochDuration();
+
 }
