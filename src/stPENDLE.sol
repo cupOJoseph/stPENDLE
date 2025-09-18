@@ -392,6 +392,10 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         emit LpFeeReceiverSet(lpFeeReceiver);
     }
 
+    function vote(address[] calldata pools, uint64[] calldata weights) public onlyRoles(ADMIN_ROLE) {
+        votingController.vote(pools, weights);
+    }
+
     function setEpochDuration(uint128 _duration) public onlyRoles(TIMELOCK_CONTROLLER_ROLE) {
         if (_duration < 1 days) revert EpochDurationInvalid();
         if (_duration > 730 days) revert EpochDurationInvalid();

@@ -237,7 +237,7 @@ contract stPENDLETest is Test {
         assertEq(vault.totalSupply(), DEPOSIT_AMOUNT, "total supply should be initial deposit");
         assertEq(vault.totalSupply(), DEPOSIT_AMOUNT, "vault should have initial deposit");
     }
-    
+
     function test_startFirstEpoch_RevertsIfCalledAfterFirstEpoch() public {
         startFirstEpoch();
         vm.expectRevert(ISTPENDLE.InvalidEpoch.selector);
@@ -574,7 +574,6 @@ contract stPENDLETest is Test {
         // No changes after window closes
         // (balances asserted via deltas earlier)
     }
-
 
     function test_GetNextEpochWithdrawalAmount() public {
         startFirstEpoch();
