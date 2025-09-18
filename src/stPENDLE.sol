@@ -255,8 +255,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
      */
     function requestRedemptionForEpoch(uint256 shares, uint256 requestedEpoch) external nonReentrant whenNotPaused {
         if (shares == 0) revert InvalidAmount();
-        uint256 currentEpoch = _updateEpoch();
-        if (requestedEpoch == 0) requestedEpoch = currentEpoch + 1;
+        _updateEpoch();
+        if (requestedEpoch == 0) requestedEpoch = _vaultPosition.currentEpoch + 1;
         if (requestedEpoch < _vaultPosition.currentEpoch + 1) revert InvalidEpoch();
 
         if (balanceOf(msg.sender) < shares) revert InsufficientBalance();
@@ -291,6 +291,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         return "stPEN";
     }
 
+    /**
+     * @notice Get the total requested redemption amount for the given epoch
+     * @param epoch Epoch to get the total requested redemption amount for
+     * @return Total requested redemption amount for the given epoch
+     */
     function getTotalRequestedRedemptionAmountPerEpoch(uint256 epoch) external view returns (uint256) {
         return _getTotalRequestedRedemptionAmountPerEpoch(epoch);
     }
@@ -317,10 +322,18 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         return pendingRedemptionShares;
     }
 
+    /**
+     * @notice Get the current epoch and update the epoch if it has changed
+     * @return Current epoch
+     */
     function currentEpoch() external returns (uint256) {
         return _updateEpoch();
     }
 
+    /**
+     * @notice Get the last epoch update
+     * @return Last epoch update
+     */
     function lastEpochUpdate() external view returns (uint256) {
         return _vaultPosition.lastEpochUpdate;
     }
@@ -412,7 +425,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     /// =========== Internal Functions ================ ///
 
     function _requireNextEpoch() internal view {
-        if (_calculateEpoch(block.timestamp) != _calculateEpoch(_vaultPosition.currentEpochStart) + 1) {
+        if (_calculateEpoch(block.timestamp) < _calculateEpoch(_vaultPosition.currentEpochStart) + 1) {
             revert EpochNotEnded();
         }
     }
