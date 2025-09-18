@@ -471,7 +471,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         if (balanceOf(user) < shares) revert InsufficientBalance();
 
         uint256 currentPendingRedemptionShares = getUserAvailableRedemption(user);
-        if (currentPendingRedemptionShares == 0) return 0;
+        if (currentPendingRedemptionShares == 0) revert NoPendingRedemption();
 
         // assert that the user has enough pending redemption shares
         if (currentPendingRedemptionShares < shares) revert InsufficientShares();

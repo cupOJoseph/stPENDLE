@@ -96,6 +96,7 @@ interface ISTPENDLE {
     error InvalidRedemptionAmount(uint256 withdrawnAmount, uint256 availableForRedemption);
     error InvalidFeeBasisPoints();
     error InvalidFeeSplit();
+    error NoPendingRedemption();
     error IsPaused();
     error OutsideRedemptionWindow();
     error InvalidRedemption();
