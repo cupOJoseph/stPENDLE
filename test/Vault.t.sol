@@ -492,12 +492,6 @@ contract stPENDLETest is Test {
         uint256 totalQueued = vault.totalRequestedRedemptionAmountPerEpoch(requestEpoch);
         assertEq(totalQueued, aliceRequestShares + bobRequestShares, "Queued shares per epoch mismatch");
 
-        // User list for that epoch should include Alice then Bob
-        address[] memory users = vault.redemptionUsersForEpoch(requestEpoch);
-        assertEq(users.length, 2, "Unexpected number of redemption users");
-        assertEq(users[0], alice, "First redemption user should be Alice");
-        assertEq(users[1], bob, "Second redemption user should be Bob");
-
         // Before the epoch advances, current-epoch availability for users should be 0
         assertEq(vault.getUserAvailableRedemption(alice), 0, "Alice shouldn't have current-epoch availability yet");
         assertEq(vault.getUserAvailableRedemption(bob), 0, "Bob shouldn't have current-epoch availability yet");
@@ -744,8 +738,14 @@ contract stPENDLETest is Test {
         vm.prank(alice);
         vault.requestRedemptionForEpoch(aliceShares / 2, 0);
 
+        // check that preview redeem is 0
+        assertEq(vault.previewRedeem(aliceShares / 2), 0, "preview redeem should be 0");
+
         // Roll epoch to set snapshot
         vm.warp(block.timestamp + 30 days);
+        // before epoch is updated, preview redeem should be 0
+        assertEq(vault.previewRedeem(aliceShares / 2), 0, "preview redeem should be 0");
+
         vm.prank(address(this));
         vault.startNewEpoch();
 

@@ -55,7 +55,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     mapping(address user => mapping(uint256 epoch => uint256 pendingRedemptionAmount)) public
         pendingRedemptionSharesPerEpoch;
     mapping(uint256 epoch => uint256 totalPendingRedemptions) public totalPendingSharesPerEpoch;
-    mapping(uint256 epoch => address[] requestedUserRedemptions) public redemptionUsersPerEpoch;
     mapping(uint256 epoch => RedemptionSnapshot redemptionSnapshot) public redemptionSnapshotPerEpoch;
 
     modifier whenNotPaused() {
@@ -264,9 +263,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         pendingRedemptionSharesPerEpoch[msg.sender][requestedEpoch] += shares;
         totalPendingSharesPerEpoch[requestedEpoch] += shares;
 
-        // Add to redemption users for requested epoch
-        redemptionUsersPerEpoch[requestedEpoch].push(msg.sender);
-
         emit RedemptionRequested(msg.sender, shares, requestedEpoch);
     }
 
@@ -329,15 +325,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         if (_calculateEpoch(block.timestamp) != _vaultPosition.currentEpoch) return 0;
         uint256 pendingRedemptionShares = pendingRedemptionSharesPerEpoch[user][_vaultPosition.currentEpoch];
         return pendingRedemptionShares;
-    }
-
-    /**
-     * @notice Get all users who have requested redemption for an epoch
-     * @param epoch Epoch to get redemption users for
-     * @return Array of users who have requested redemption for the epoch
-     */
-    function redemptionUsersForEpoch(uint256 epoch) external view returns (address[] memory) {
-        return redemptionUsersPerEpoch[epoch];
     }
 
     function currentEpoch() external returns (uint256) {
@@ -530,7 +517,12 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
      * @return Amount of PENDLE that can be redeemed
      */
     function previewRedeem(uint256 shares) public view override returns (uint256) {
+        // epoch has not been updated, return 0
+        if (_calculateEpoch(block.timestamp) != _vaultPosition.currentEpoch) return 0;
+        if (!_isWithinRedemptionWindow()) return 0;
+
         RedemptionSnapshot memory redemptionSnapshot = redemptionSnapshotPerEpoch[_vaultPosition.currentEpoch];
+        // if no snapshot exists, return 0
         if (redemptionSnapshot.totalSupplyAtEpochStart == 0) return 0;
         return FixedPointMathLib.fullMulDiv(
             shares,

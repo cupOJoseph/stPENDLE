@@ -35,7 +35,6 @@ interface ISTPENDLE {
     function totalRequestedRedemptionAmountPerEpoch(uint256 epoch) external view returns (uint256);
     function getAvailableRedemptionAmount() external view returns (uint256);
     function getUserAvailableRedemption(address user) external returns (uint256);
-    function redemptionUsersForEpoch(uint256 epoch) external view returns (address[] memory);
     function currentEpoch() external returns (uint256);
 
     // -------- Public views --------
@@ -57,7 +56,6 @@ interface ISTPENDLE {
     // Auto-generated mapping getters
     function pendingRedemptionSharesPerEpoch(address user, uint256 epoch) external view returns (uint256);
     function totalPendingSharesPerEpoch(uint256 epoch) external view returns (uint256);
-    function redemptionUsersPerEpoch(uint256 epoch, uint256 index) external view returns (address);
 
     // -------- Governance/admin --------
     function setFeeReceiver(address _feeReceiver) external;
