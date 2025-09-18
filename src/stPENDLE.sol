@@ -392,6 +392,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         emit LpFeeReceiverSet(lpFeeReceiver);
     }
 
+    /**
+     * @notice Vote on a proposal on in the voting controller
+     * @param pools Pools to vote on
+     * @param weights Weights for each pool
+     */
     function vote(address[] calldata pools, uint64[] calldata weights) public onlyRoles(ADMIN_ROLE) {
         votingController.vote(pools, weights);
     }
