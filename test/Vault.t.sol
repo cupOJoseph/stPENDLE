@@ -826,5 +826,66 @@ contract stPENDLETest is Test {
         vm.expectRevert(ISTPENDLE.InvalidFeeReceiver.selector);
         vault.setFeeReceiver(address(0));
     }
+
+    function test_DepositBeforeFirstEpoch_CannotClaimOrWithdraw() public {
+        // Alice deposits before first epoch
+        vm.startPrank(alice);
+        pendle.approve(address(vault), DEPOSIT_AMOUNT);
+        uint256 minted = vault.depositBeforeFirstEpoch(DEPOSIT_AMOUNT, alice);
+        vm.stopPrank();
+
+        assertEq(minted, DEPOSIT_AMOUNT, "1:1 before first epoch");
+        assertEq(vault.balanceOf(alice), DEPOSIT_AMOUNT, "shares minted to alice");
+
+        // Withdraw/redeem paths are disabled
+        vm.expectRevert(ISTPENDLE.InvalidERC4626Function.selector);
+        vault.redeem(1, address(alice), address(alice));
+        vm.expectRevert(ISTPENDLE.InvalidERC4626Function.selector);
+        vault.withdraw(1, address(alice), address(alice));
+
+        // Claiming before epoch start must revert due to window
+        vm.prank(alice);
+        vm.expectRevert(ISTPENDLE.OutsideRedemptionWindow.selector);
+        vault.claimAvailableRedemptionShares(DEPOSIT_AMOUNT);
+
+        // No availability before epoch roll
+        assertEq(vault.getUserAvailableRedemption(alice), 0, "no availability before first epoch");
+    }
+
+    function test_StartFirstEpoch_LocksAndNoImmediateClaim() public {
+        // Deposit before first epoch
+        vm.startPrank(alice);
+        pendle.approve(address(vault), DEPOSIT_AMOUNT);
+        vault.depositBeforeFirstEpoch(DEPOSIT_AMOUNT, alice);
+        vm.stopPrank();
+
+        // Start first epoch and lock
+        vault.startFirstEpoch();
+        assertEq(vault.totalLockedPendle(), DEPOSIT_AMOUNT, "locked equals deposit");
+        assertEq(
+            votingEscrowMainchain.balanceOf(address(vault)),
+            DEPOSIT_AMOUNT,
+            "ve balance equals locked"
+        );
+
+        // Cannot claim without pending request
+        vm.prank(alice);
+        vm.expectRevert(ISTPENDLE.NoPendingRedemption.selector);
+        vault.claimAvailableRedemptionShares(DEPOSIT_AMOUNT);
+        assertEq(vault.getUserAvailableRedemption(alice), 0, "no availability without request");
+
+        // Request for next epoch and roll, then claim works
+        vm.prank(alice);
+        vault.requestRedemptionForEpoch(DEPOSIT_AMOUNT, 0); // next epoch
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(address(this));
+        vault.startNewEpoch();
+
+        uint256 pendleBefore = pendle.balanceOf(alice);
+        vm.prank(alice);
+        uint256 claimed = vault.claimAvailableRedemptionShares(DEPOSIT_AMOUNT);
+        assertEq(claimed, DEPOSIT_AMOUNT, "should redeem full deposit at snapshot rate");
+        assertEq(pendle.balanceOf(alice) - pendleBefore, DEPOSIT_AMOUNT, "PENDLE delta equals deposit");
+    }
 }
 /// forge-lint: disable-end

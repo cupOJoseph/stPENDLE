@@ -255,8 +255,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
      */
     function requestRedemptionForEpoch(uint256 shares, uint256 requestedEpoch) external nonReentrant whenNotPaused {
         if (shares == 0) revert InvalidAmount();
-        _updateEpoch();
-        if (requestedEpoch == 0) requestedEpoch = _vaultPosition.currentEpoch + 1;
+        uint256 currentEpoch = _updateEpoch();
+        if (requestedEpoch == 0) requestedEpoch = currentEpoch + 1;
         if (requestedEpoch < _vaultPosition.currentEpoch + 1) revert InvalidEpoch();
 
         if (balanceOf(msg.sender) < shares) revert InsufficientBalance();
