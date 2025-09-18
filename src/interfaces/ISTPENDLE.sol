@@ -31,7 +31,6 @@ interface ISTPENDLE {
     function claimAvailableRedemptionShares(uint256 shares) external returns (uint256 assetsRedeemed);
 
     // -------- Redemption queue  --------
-    function previewVeWithdraw() external view returns (uint256);
     function totalRequestedRedemptionAmountPerEpoch(uint256 epoch) external view returns (uint256);
     function getAvailableRedemptionAmount() external view returns (uint256);
     function getUserAvailableRedemption(address user) external returns (uint256);

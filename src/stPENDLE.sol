@@ -204,6 +204,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     function startNewEpoch() external whenNotPaused nonReentrant {
         _requireNextEpoch();
         uint256 newEpoch = _updateEpoch();
+        // check that there is a vePENDLE to claim
+        if (votingEscrowMainchain.balanceOf(address(this)) == 0) revert InsufficientBalance();
 
         // 1) Claim matured vePENDLE
         uint256(votingEscrowMainchain.withdraw());
@@ -287,18 +289,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
 
     function symbol() public pure override returns (string memory) {
         return "stPEN";
-    }
-
-    /**
-     * @notice Preview the amount of PENDLE that can be withdrawn immediately from the pendle voting escrow vault position must be expired
-     * @return Amount available for redemption
-     */
-    function previewVeWithdraw() public view returns (uint256) {
-        if (block.timestamp - _vaultPosition.lastEpochUpdate < _vaultPosition.epochDuration) return 0;
-
-        (bool success, bytes memory data) =
-            address(votingEscrowMainchain).staticcall(abi.encodeWithSelector(votingEscrowMainchain.withdraw.selector));
-        return success ? abi.decode(data, (uint128)) : 0;
     }
 
     function getTotalRequestedRedemptionAmountPerEpoch(uint256 epoch) external view returns (uint256) {
