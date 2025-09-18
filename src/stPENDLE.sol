@@ -77,10 +77,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, ISTPENDL
         _;
     }
 
- 
-    constructor(
-        VaultConfig memory config
-    ) CCIPReceiver(config.ccipRouter) {
+    constructor(VaultConfig memory config) CCIPReceiver(config.ccipRouter) {
         if (config.lpFeeReceiver == address(0)) revert InvalidFeeReceiver();
         if (config.feeReceiver == address(0)) revert InvalidFeeReceiver();
         if (config.admin == address(0)) revert InvalidAdmin();
@@ -126,7 +123,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, ISTPENDL
         return sharesMinted;
     }
 
-    function depositAndBridge(uint64 destChainId, address receiver, uint256 amount) public whenNotPaused returns (uint256, bytes32) {
+    function depositAndBridge(uint64 destChainId, address receiver, uint256 amount)
+        public
+        whenNotPaused
+        returns (uint256, bytes32)
+    {
         uint256 sharesMinted = super.deposit(amount, receiver);
         _vaultPosition.aumPendle += amount;
         // increase lock position in vePENDLE
@@ -303,14 +304,13 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, ISTPENDL
         return _bridgeStPendle(destChainId, receiver, amount);
     }
 
-
     function _bridgeStPendle(uint64 destChainId, address receiver, uint256 amount) internal returns (bytes32) {
-        if(amount > balanceOf(msg.sender)) revert InsufficientBalance();
-        if(destChainId == 0) revert InvalidDestChainId();
-        if(crossChainGatewayByChainId[destChainId] == address(0)) revert InvalidCrossChainGateway();
-        if(amount == 0) revert InvalidAmount();
+        if (amount > balanceOf(msg.sender)) revert InsufficientBalance();
+        if (destChainId == 0) revert InvalidDestChainId();
+        if (crossChainGatewayByChainId[destChainId] == address(0)) revert InvalidCrossChainGateway();
+        if (amount == 0) revert InvalidAmount();
 
-             // lock shares in this contract
+        // lock shares in this contract
         SafeTransferLib.safeTransferFrom(address(this), msg.sender, address(this), amount);
 
         Client.EVMTokenAmount[] memory tokenAmounts = new Client.EVMTokenAmount[](0);
@@ -326,11 +326,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, ISTPENDL
         uint256 fee = IRouterClient(i_ccipRouter).getFee(destChainId, message);
         bytes32 messageId;
 
-        if(feeToken == address(0)) {
-            if(address(this).balance < fee) revert InsufficientBalance();
+        if (feeToken == address(0)) {
+            if (address(this).balance < fee) revert InsufficientBalance();
             messageId = IRouterClient(i_ccipRouter).ccipSend{value: fee}(destChainId, message);
         } else {
-            if(SafeTransferLib.balanceOf(feeToken, msg.sender) < fee) revert InsufficientBalance();
+            if (SafeTransferLib.balanceOf(feeToken, msg.sender) < fee) revert InsufficientBalance();
             messageId = IRouterClient(i_ccipRouter).ccipSend(destChainId, message);
         }
 
@@ -562,7 +562,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, ISTPENDL
      * always have locked shares equivalent to the amount of stPENDLE that has been bridged
      */
     function _ccipReceive(Client.Any2EVMMessage memory message) internal override onlyRouter {
-        if(crossChainGatewayByChainId[message.sourceChainSelector] == address(0)) revert InvalidCrossChainGateway();
+        if (crossChainGatewayByChainId[message.sourceChainSelector] == address(0)) revert InvalidCrossChainGateway();
 
         BridgeStPendleData memory bridgeData = abi.decode(message.data, (BridgeStPendleData));
 
@@ -591,7 +591,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, ISTPENDL
     function _beforeFirstEpoch() internal view {
         if (_vaultPosition.currentEpoch != 0) revert InvalidEpoch();
     }
-
 
     // ERC 4626 overrides
 

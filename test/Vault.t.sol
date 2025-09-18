@@ -10,8 +10,10 @@ import {IPVeToken} from "src/interfaces/pendle/IPVeToken.sol";
 import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
 import {ISTPENDLE} from "src/interfaces/ISTPENDLE.sol";
 import {IERC20} from "lib/forge-std/src/interfaces/IERC20.sol";
+import {ISTPENDLECrossChain} from "src/interfaces/ISTPENDLECrossChain.sol";
+import {stPendleCrossChainGateway} from "src/crosschain/StPendleCrossChainGateway.sol";
 
-// chainlink testing 
+// chainlink testing
 import {
     CCIPLocalSimulator,
     IRouterClient,
@@ -19,7 +21,6 @@ import {
     BurnMintERC677Helper
 } from "@chainlink/local/src/ccip/CCIPLocalSimulator.sol";
 import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
-
 
 /// forge-lint: disable-start(all)
 // Mock contracts for testing
@@ -31,7 +32,6 @@ contract MockVotingEscrowMainchain {
     mapping(address => uint128) public lockedBalances;
     mapping(address => uint128) public unlockTimes;
     uint128 public totalSupply;
-
 
     constructor(MockPENDLE _pendle, MockMerkleDistributor _merkleDistributor) {
         pendle = _pendle;
@@ -156,6 +156,7 @@ contract stPENDLETest is Test {
     MockUSDT public usdt;
     MockPENDLE public pendle;
     TimelockController public timelockController;
+    ISTPENDLECrossChain public crossChainGateway;
 
     // ccip
     CCIPLocalSimulator public ccipLocalSimulator;
@@ -203,7 +204,7 @@ contract stPENDLETest is Test {
         proposers[0] = address(this);
         executors[0] = address(this);
         timelockController = new TimelockController(1 hours, proposers, executors, address(this));
-       ISTPENDLE.VaultConfig memory config = ISTPENDLE.VaultConfig({
+        ISTPENDLE.VaultConfig memory config = ISTPENDLE.VaultConfig({
             pendleTokenAddress: address(pendle),
             merkleDistributorAddress: address(merkleDistributor),
             votingEscrowMainchain: address(votingEscrowMainchain),
@@ -216,12 +217,20 @@ contract stPENDLETest is Test {
             epochDuration: 30 days,
             ccipRouter: address(router),
             feeToken: address(0)
-    });
-    
+        });
+
         // Deploy vault
         vault = new stPENDLE(config);
+        // deploy cross chain gateway
+        uint64[] memory chainIds = new uint64[](1);
+        address[] memory gateways = new address[](1);
+        chainIds[0] = destinationChainSelector;
+        gateways[0] = address(ccipLocalSimulator);
+        crossChainGateway =
+            new stPendleCrossChainGateway(chainIds, gateways, address(router), address(this), address(0));
 
         vm.deal(address(vault), 1000e18);
+        vm.deal(address(crossChainGateway), 1000e18);
 
         // Setup initial balances
         pendle.mint(address(this), INITIAL_BALANCE);

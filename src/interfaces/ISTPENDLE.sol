@@ -38,7 +38,7 @@ interface ISTPENDLE {
         address ccipRouter;
         address feeToken;
     }
-    
+
     // ========= Core actions =========
     function claimFees(uint256 totalAccrued, bytes32[] calldata proof) external;
     function startNewEpoch() external;
