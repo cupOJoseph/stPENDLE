@@ -113,5 +113,4 @@ interface ISTPENDLE {
     error InvalidVotingController();
     error InvalidPreLockRedemptionPeriod();
     error InvalidEpochDuration();
-
 }

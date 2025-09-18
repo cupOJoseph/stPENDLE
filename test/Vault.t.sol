@@ -270,9 +270,7 @@ contract stPENDLETest is Test {
         assertEq(aumDelta + lpDelta + protocolDelta, 100e18, "fees must split between AUM and transfers");
         // Holders portion should be locked immediately while in window
         assertEq(
-            votingEscrowMainchain.balanceOf(address(vault)) - veBefore,
-            aumDelta,
-            "holders portion should be locked"
+            votingEscrowMainchain.balanceOf(address(vault)) - veBefore, aumDelta, "holders portion should be locked"
         );
         // No residual unlocked PENDLE after immediate lock and transfers
         assertEq(pendle.balanceOf(address(vault)), 0, "no unlocked PENDLE after claim within window");
@@ -595,7 +593,6 @@ contract stPENDLETest is Test {
         vm.prank(alice);
         vm.expectRevert(ISTPENDLE.NoPendingRedemption.selector);
         vault.claimAvailableRedemptionShares(aliceShares / 4);
-   
 
         // Advance and start next epoch: can claim
         vm.warp(block.timestamp + 30 days);
@@ -806,7 +803,6 @@ contract stPENDLETest is Test {
         assertLt(pendle.balanceOf(address(vault)), 2, "dust tolerance");
     }
 
-
     function test_RevertInvalidrewardsSplit() public {
         vm.expectRevert(ISTPENDLE.InvalidrewardsSplit.selector);
         vault.setrewardsSplit(2e18, 0); // 10.01%
@@ -862,11 +858,7 @@ contract stPENDLETest is Test {
         // Start first epoch and lock
         vault.startFirstEpoch();
         assertEq(vault.totalLockedPendle(), DEPOSIT_AMOUNT, "locked equals deposit");
-        assertEq(
-            votingEscrowMainchain.balanceOf(address(vault)),
-            DEPOSIT_AMOUNT,
-            "ve balance equals locked"
-        );
+        assertEq(votingEscrowMainchain.balanceOf(address(vault)), DEPOSIT_AMOUNT, "ve balance equals locked");
 
         // Cannot claim without pending request
         vm.prank(alice);

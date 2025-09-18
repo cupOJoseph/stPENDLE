@@ -96,8 +96,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         ASSET = _pendleTokenAddress;
         _vaultPosition.preLockRedemptionPeriod = _preLockRedemptionPeriod;
         _vaultPosition.epochDuration = _safeCast128(_epochDuration);
-        rewardsSplitHolders = 9e17;  // 90% to holders (AUM)
-        rewardsSplitLp = 1e17;  // 10% to LP
+        rewardsSplitHolders = 9e17; // 90% to holders (AUM)
+        rewardsSplitLp = 1e17; // 10% to LP
         lpFeeReceiver = _lpFeeReceiver;
         feeReceiver = _feeReceiver;
         _initializeOwner(address(msg.sender));
@@ -161,7 +161,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         if (holdersAmount != 0) {
             _vaultPosition.aumPendle += holdersAmount;
         }
-        
+
         if (lpAmount != 0) {
             SafeTransferLib.safeTransfer(asset(), lpFeeReceiver, lpAmount);
         }
@@ -219,11 +219,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         uint256 pendingShares = totalPendingSharesPerEpoch[newEpoch]; // tracked in shares
         uint256 reserveAssets = 0;
         if (pendingShares != 0 && supplyAtStart != 0) {
-            reserveAssets = FixedPointMathLib.fullMulDiv(
-                pendingShares,
-                aumAtStart + 1,
-                supplyAtStart + 1
-            );
+            reserveAssets = FixedPointMathLib.fullMulDiv(pendingShares, aumAtStart + 1, supplyAtStart + 1);
             if (reserveAssets > totalPendleBalance) reserveAssets = totalPendleBalance; // clamp
         }
 
@@ -362,7 +358,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         return FEE_BASIS_POINTS;
     }
 
-    function rewardsSplit() external view returns (uint256, uint256){
+    function rewardsSplit() external view returns (uint256, uint256) {
         return (rewardsSplitHolders, rewardsSplitLp);
     }
 
@@ -516,6 +512,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
 
     /**
      * @notice Preview the amount of PENDLE that can be redeemed for the given shares according to the current redemption snapshot
+     * @dev Will return 0 if redemption window has closed or if a new epoch has not been started
      * @param shares Amount of shares to redeem
      * @return Amount of PENDLE that can be redeemed
      */
@@ -528,20 +525,27 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         // if no snapshot exists, return 0
         if (redemptionSnapshot.totalSupplyAtEpochStart == 0) return 0;
         return FixedPointMathLib.fullMulDiv(
-            shares,
-            redemptionSnapshot.aumPendleAtEpochStart + 1,
-            redemptionSnapshot.totalSupplyAtEpochStart + 1
+            shares, redemptionSnapshot.aumPendleAtEpochStart + 1, redemptionSnapshot.totalSupplyAtEpochStart + 1
         );
     }
 
+    /**
+     * @notice override to revert so redeeming happens through redemption queue
+     */
     function redeem(uint256, /*shares */ address, /*to */ address /*owner*/ ) public pure override returns (uint256) {
         revert InvalidERC4626Function(); // this should never be called on this contract
     }
 
+    /**
+     * @notice override to revert so minting happens through deposit flow
+     */
     function mint(uint256, /*shares*/ address /*to*/ ) public pure override returns (uint256) {
         revert InvalidERC4626Function();
     }
 
+    /**
+     * @notice override to revert so withdrawals happen through withdrawal queue
+     */
     function withdraw(uint256, /*assets*/ address, /*to*/ address /*owner*/ ) public pure override returns (uint256) {
         revert InvalidERC4626Function();
     }
