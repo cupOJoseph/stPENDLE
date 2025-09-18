@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {Script} from "lib/forge-std/src/Script.sol";
 import {Contracts} from "script/Contracts.sol";
 import {stPENDLE} from "src/stPENDLE.sol";
+import {console} from "forge-std/console.sol";
 
 contract stPendleDeploy is Script, Contracts {
     function run() public {
@@ -34,6 +35,8 @@ contract stPendleDeploy is Script, Contracts {
             preLockRedemptionPeriod,
             epochDuration
         );
+
+        console.log("stPENDLE deployed at", address(vault));
         vm.stopBroadcast();
     }
 }

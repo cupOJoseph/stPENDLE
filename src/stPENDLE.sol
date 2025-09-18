@@ -63,10 +63,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     }
 
     modifier beforeFirstEpoch() {
-        if (_vaultPosition.currentEpoch != 0) revert InvalidEpoch();
+        _beforeFirstEpoch();
         _;
     }
 
+ 
     constructor(
         address _pendleTokenAddress,
         address _merkleDistributorAddress,
@@ -512,6 +513,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         paused = _paused;
         emit Paused(_paused);
     }
+
+    function _beforeFirstEpoch() internal view {
+        if (_vaultPosition.currentEpoch != 0) revert InvalidEpoch();
+    }
+
 
     // ERC 4626 overrides
 

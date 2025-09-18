@@ -108,4 +108,5 @@ interface ISTPENDLE {
     error InvalidVotingEscrowMainchain();
     error InvalidVotingController();
     error InvalidPreLockRedemptionPeriod();
+    error InvalidEpochDuration();
 }
