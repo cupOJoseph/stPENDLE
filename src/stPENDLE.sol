@@ -10,8 +10,13 @@ import {FixedPointMathLib} from "lib/solady/src/utils/FixedPointMathLib.sol";
 import {IPMerkleDistributor} from "src/interfaces/pendle/IPMerkleDistributor.sol";
 import {IPVotingEscrowMainchain} from "src/interfaces/pendle/IPVotingEscrowMainchain.sol";
 import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
-
+import {ISTPENDLECrossChain} from "src/interfaces/ISTPENDLECrossChain.sol";
 import {ISTPENDLE} from "src/interfaces/ISTPENDLE.sol";
+
+// cross chain
+import {CCIPReceiver} from "lib/chainlink-ccip/chains/evm/contracts/applications/CCIPReceiver.sol";
+import {Client} from "lib/chainlink-ccip/chains/evm/contracts/libraries/Client.sol";
+import {IRouterClient} from "lib/chainlink-ccip/chains/evm/contracts/interfaces/IRouterClient.sol";
 // import "forge-std/console.sol";
 /**
  * @title stPENDLE - ERC-4626 Vault for PENDLE Staking
@@ -19,7 +24,7 @@ import {ISTPENDLE} from "src/interfaces/ISTPENDLE.sol";
  * @dev Fully compliant with ERC-4626 tokenized vault standard using Solady
  */
 
-contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
+contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, ISTPENDLECrossChain, CCIPReceiver {
     using SafeTransferLib for address;
     using FixedPointMathLib for uint256;
 
@@ -57,6 +62,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     mapping(uint256 epoch => uint256 totalPendingRedemptions) public totalPendingSharesPerEpoch;
     mapping(uint256 epoch => RedemptionSnapshot redemptionSnapshot) public redemptionSnapshotPerEpoch;
 
+    // cross chain
+    mapping(uint64 chainId => address crossChainGateway) public crossChainGatewayByChainId;
+    mapping(uint64 chainId => bytes extraArgs) public extraArgsByChainId;
+    address public feeToken;
+
     modifier whenNotPaused() {
         _whenNotPaused();
         _;
@@ -69,42 +79,36 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
 
  
     constructor(
-        address _pendleTokenAddress,
-        address _merkleDistributorAddress,
-        address _votingEscrowMainchain,
-        address _votingControllerAddress,
-        address _timelockController,
-        address _admin,
-        address _lpFeeReceiver,
-        address _feeReceiver,
-        uint256 _preLockRedemptionPeriod,
-        uint256 _epochDuration
-    ) {
-        if (_lpFeeReceiver == address(0)) revert InvalidFeeReceiver();
-        if (_feeReceiver == address(0)) revert InvalidFeeReceiver();
-        if (_admin == address(0)) revert InvalidAdmin();
-        if (_timelockController == address(0)) revert InvalidTimelockController();
-        if (_pendleTokenAddress == address(0)) revert InvalidPendleToken();
-        if (_merkleDistributorAddress == address(0)) revert InvalidMerkleDistributor();
-        if (_votingEscrowMainchain == address(0)) revert InvalidVotingEscrowMainchain();
-        if (_votingControllerAddress == address(0)) revert InvalidVotingController();
-        if (_preLockRedemptionPeriod == 0) revert InvalidPreLockRedemptionPeriod();
-        if (_epochDuration == 0) revert InvalidEpochDuration();
+        VaultConfig memory config
+    ) CCIPReceiver(config.ccipRouter) {
+        if (config.lpFeeReceiver == address(0)) revert InvalidFeeReceiver();
+        if (config.feeReceiver == address(0)) revert InvalidFeeReceiver();
+        if (config.admin == address(0)) revert InvalidAdmin();
+        if (config.timelockController == address(0)) revert InvalidTimelockController();
+        if (config.pendleTokenAddress == address(0)) revert InvalidPendleToken();
+        if (config.merkleDistributorAddress == address(0)) revert InvalidMerkleDistributor();
+        if (config.votingEscrowMainchain == address(0)) revert InvalidVotingEscrowMainchain();
+        if (config.votingControllerAddress == address(0)) revert InvalidVotingController();
+        if (config.preLockRedemptionPeriod == 0) revert InvalidPreLockRedemptionPeriod();
+        if (config.epochDuration == 0) revert InvalidEpochDuration();
+        if (config.ccipRouter == address(0)) revert InvalidCCIPRouter();
 
-        votingEscrowMainchain = IPVotingEscrowMainchain(_votingEscrowMainchain);
-        merkleDistributor = IPMerkleDistributor(_merkleDistributorAddress);
-        votingController = IPVotingController(_votingControllerAddress);
-        ASSET = _pendleTokenAddress;
-        _vaultPosition.preLockRedemptionPeriod = _preLockRedemptionPeriod;
-        _vaultPosition.epochDuration = _safeCast128(_epochDuration);
+        votingEscrowMainchain = IPVotingEscrowMainchain(config.votingEscrowMainchain);
+        merkleDistributor = IPMerkleDistributor(config.merkleDistributorAddress);
+        votingController = IPVotingController(config.votingControllerAddress);
+        ASSET = config.pendleTokenAddress;
+        _vaultPosition.preLockRedemptionPeriod = config.preLockRedemptionPeriod;
+        _vaultPosition.epochDuration = _safeCast128(config.epochDuration);
         rewardsSplitHolders = 9e17; // 90% to holders (AUM)
         rewardsSplitLp = 1e17; // 10% to LP
-        lpFeeReceiver = _lpFeeReceiver;
-        feeReceiver = _feeReceiver;
+        lpFeeReceiver = config.lpFeeReceiver;
+        feeReceiver = config.feeReceiver;
+        feeToken = config.feeToken;
+
         _initializeOwner(address(msg.sender));
-        _grantRoles(_admin, ADMIN_ROLE);
-        _grantRoles(_timelockController, TIMELOCK_CONTROLLER_ROLE);
-        transferOwnership(_admin);
+        _grantRoles(config.admin, ADMIN_ROLE);
+        _grantRoles(config.timelockController, TIMELOCK_CONTROLLER_ROLE);
+        transferOwnership(config.admin);
     }
 
     /// @dev Returns the address of the underlying asset
@@ -120,6 +124,16 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         _lockPendle(amount, 0);
 
         return sharesMinted;
+    }
+
+    function depositAndBridge(uint64 destChainId, address receiver, uint256 amount) public whenNotPaused returns (uint256, bytes32) {
+        uint256 sharesMinted = super.deposit(amount, receiver);
+        _vaultPosition.aumPendle += amount;
+        // increase lock position in vePENDLE
+        _lockPendle(amount, 0);
+        // bridge to destination chain
+        bytes32 messageId = _bridgeStPendle(destChainId, receiver, amount);
+        return (sharesMinted, messageId);
     }
 
     /**
@@ -278,6 +292,52 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         return _processRedemption(msg.sender, shares);
     }
 
+    /**
+     * @notice Bridge stPENDLE to destination chain
+     * @param destChainId Destination chain ID
+     * @param receiver Receiver address on destination chain
+     * @param amount Amount of stPENDLE to bridge
+     * @return messageId Message ID
+     */
+    function bridgeStPendle(uint64 destChainId, address receiver, uint256 amount) external returns (bytes32) {
+        return _bridgeStPendle(destChainId, receiver, amount);
+    }
+
+
+    function _bridgeStPendle(uint64 destChainId, address receiver, uint256 amount) internal returns (bytes32) {
+        if(amount > balanceOf(msg.sender)) revert InsufficientBalance();
+        if(destChainId == 0) revert InvalidDestChainId();
+        if(crossChainGatewayByChainId[destChainId] == address(0)) revert InvalidCrossChainGateway();
+        if(amount == 0) revert InvalidAmount();
+
+             // lock shares in this contract
+        SafeTransferLib.safeTransferFrom(address(this), msg.sender, address(this), amount);
+
+        Client.EVMTokenAmount[] memory tokenAmounts = new Client.EVMTokenAmount[](0);
+
+        Client.EVM2AnyMessage memory message = Client.EVM2AnyMessage({
+            receiver: abi.encode(crossChainGatewayByChainId[destChainId]),
+            extraArgs: extraArgsByChainId[destChainId],
+            feeToken: feeToken,
+            tokenAmounts: tokenAmounts,
+            data: abi.encode(BridgeStPendleData({receiver: receiver, sender: msg.sender, amount: amount}))
+        });
+
+        uint256 fee = IRouterClient(i_ccipRouter).getFee(destChainId, message);
+        bytes32 messageId;
+
+        if(feeToken == address(0)) {
+            if(address(this).balance < fee) revert InsufficientBalance();
+            messageId = IRouterClient(i_ccipRouter).ccipSend{value: fee}(destChainId, message);
+        } else {
+            if(SafeTransferLib.balanceOf(feeToken, msg.sender) < fee) revert InsufficientBalance();
+            messageId = IRouterClient(i_ccipRouter).ccipSend(destChainId, message);
+        }
+
+        emit MessageSent(messageId);
+        return messageId;
+    }
+
     /// ============ View Functions ================ ///
 
     function name() public pure override returns (string memory) {
@@ -374,13 +434,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
 
     /// =========== Governance Council Functions ================ ///
 
-    function setrewardsSplit(uint256 holders, uint256 lp) public onlyRoles(ADMIN_ROLE) {
-        if (holders + lp > 1e18) revert InvalidrewardsSplit();
-        rewardsSplitHolders = holders;
-        rewardsSplitLp = lp;
-        emit rewardsSplitSet(holders, lp);
-    }
-
     function setFeeReceiver(address _feeReceiver) public onlyRoles(ADMIN_ROLE) {
         if (_feeReceiver == address(0)) revert InvalidFeeReceiver(); // 0 address is not allowed
         feeReceiver = _feeReceiver;
@@ -391,6 +444,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         if (_lpFeeReceiver == address(0)) revert InvalidFeeReceiver(); // 0 address is not allowed
         lpFeeReceiver = _lpFeeReceiver;
         emit LpFeeReceiverSet(lpFeeReceiver);
+    }
+
+    function setFeeToken(address _feeToken) public onlyRoles(ADMIN_ROLE) {
+        feeToken = _feeToken;
+        emit FeeTokenSet(feeToken);
     }
 
     /**
@@ -496,6 +554,22 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         votingEscrowMainchain.increaseLockPosition(_safeCast128(amount), duration);
         _vaultPosition.totalLockedPendle += amount;
         emit AssetPositionIncreased(amount, _vaultPosition.currentEpoch, duration);
+    }
+
+    /**
+     * @notice Receive stPENDLE from destination chain
+     * @dev since tokens can only get to other chains by bridging from this contract we should
+     * always have locked shares equivalent to the amount of stPENDLE that has been bridged
+     */
+    function _ccipReceive(Client.Any2EVMMessage memory message) internal override onlyRouter {
+        if(crossChainGatewayByChainId[message.sourceChainSelector] == address(0)) revert InvalidCrossChainGateway();
+
+        BridgeStPendleData memory bridgeData = abi.decode(message.data, (BridgeStPendleData));
+
+        // send shares locked in this contract to receiver
+        SafeTransferLib.safeTransfer(asset(), bridgeData.receiver, bridgeData.amount);
+
+        emit CrossChainMint(message.sourceChainSelector, bridgeData.sender, bridgeData.receiver, bridgeData.amount);
     }
 
     function _safeCast128(uint256 value) internal pure returns (uint128) {

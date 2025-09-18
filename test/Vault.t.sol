@@ -11,15 +11,27 @@ import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
 import {ISTPENDLE} from "src/interfaces/ISTPENDLE.sol";
 import {IERC20} from "lib/forge-std/src/interfaces/IERC20.sol";
 
+// chainlink testing 
+import {
+    CCIPLocalSimulator,
+    IRouterClient,
+    LinkToken,
+    BurnMintERC677Helper
+} from "@chainlink/local/src/ccip/CCIPLocalSimulator.sol";
+import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
+
+
 /// forge-lint: disable-start(all)
 // Mock contracts for testing
 contract MockVotingEscrowMainchain {
+    MockPENDLE public pendle;
+    MockMerkleDistributor public merkleDistributor;
+
     mapping(address => uint128) public balances;
     mapping(address => uint128) public lockedBalances;
     mapping(address => uint128) public unlockTimes;
     uint128 public totalSupply;
-    MockPENDLE public pendle;
-    MockMerkleDistributor public merkleDistributor;
+
 
     constructor(MockPENDLE _pendle, MockMerkleDistributor _merkleDistributor) {
         pendle = _pendle;
@@ -145,6 +157,12 @@ contract stPENDLETest is Test {
     MockPENDLE public pendle;
     TimelockController public timelockController;
 
+    // ccip
+    CCIPLocalSimulator public ccipLocalSimulator;
+    LinkToken linkToken;
+    uint64 destinationChainSelector;
+    IRouterClient router;
+
     address public alice = address(0x1);
     address public bob = address(0x2);
     address public charlie = address(0x3);
@@ -167,6 +185,15 @@ contract stPENDLETest is Test {
         usdt = new MockUSDT();
         pendle = new MockPENDLE();
 
+        ccipLocalSimulator = new CCIPLocalSimulator();
+
+        (uint64 chainSelector, IRouterClient sourceRouter,,, LinkToken link, BurnMintERC677Helper ccipBnM,) =
+            ccipLocalSimulator.configuration();
+
+        router = sourceRouter;
+        destinationChainSelector = chainSelector;
+        linkToken = link;
+
         // Deploy mock contracts
         merkleDistributor = new MockMerkleDistributor(pendle);
         votingController = new MockVotingController();
@@ -176,20 +203,25 @@ contract stPENDLETest is Test {
         proposers[0] = address(this);
         executors[0] = address(this);
         timelockController = new TimelockController(1 hours, proposers, executors, address(this));
-
+       ISTPENDLE.VaultConfig memory config = ISTPENDLE.VaultConfig({
+            pendleTokenAddress: address(pendle),
+            merkleDistributorAddress: address(merkleDistributor),
+            votingEscrowMainchain: address(votingEscrowMainchain),
+            votingControllerAddress: address(votingController),
+            timelockController: address(timelockController),
+            admin: address(this),
+            lpFeeReceiver: lpFeeReceiver,
+            feeReceiver: feeReceiver,
+            preLockRedemptionPeriod: 20 days,
+            epochDuration: 30 days,
+            ccipRouter: address(router),
+            feeToken: address(0)
+    });
+    
         // Deploy vault
-        vault = new stPENDLE(
-            address(pendle),
-            address(merkleDistributor),
-            address(votingEscrowMainchain),
-            address(votingController),
-            address(timelockController),
-            address(this),
-            lpFeeReceiver,
-            feeReceiver,
-            20 days,
-            30 days
-        );
+        vault = new stPENDLE(config);
+
+        vm.deal(address(vault), 1000e18);
 
         // Setup initial balances
         pendle.mint(address(this), INITIAL_BALANCE);
@@ -690,7 +722,7 @@ contract stPENDLETest is Test {
         vault.mint(1, address(this));
     }
 
-    function test_SetRewardsSplit_ProtocolShare() public {
+    function test_setRewardsSplit_ProtocolShare() public {
         startFirstEpoch();
         // Set LP receiver
         vault.setLpFeeReceiver(lpFeeReceiver);
@@ -834,7 +866,7 @@ contract stPENDLETest is Test {
 
     function test_RevertInvalidrewardsSplit() public {
         vm.expectRevert(ISTPENDLE.InvalidrewardsSplit.selector);
-        vault.setrewardsSplit(2e18, 0); // 10.01%
+        vault.setRewardsSplit(2e18, 0); // 10.01%
     }
 
     function test_RevertInvalidEpochDuration() public {

@@ -24,6 +24,21 @@ interface ISTPENDLE {
         uint256 epochStartTimestamp;
     }
 
+    struct VaultConfig {
+        address pendleTokenAddress;
+        address merkleDistributorAddress;
+        address votingEscrowMainchain;
+        address votingControllerAddress;
+        address timelockController;
+        address admin;
+        address lpFeeReceiver;
+        address feeReceiver;
+        uint256 preLockRedemptionPeriod;
+        uint256 epochDuration;
+        address ccipRouter;
+        address feeToken;
+    }
+    
     // ========= Core actions =========
     function claimFees(uint256 totalAccrued, bytes32[] calldata proof) external;
     function startNewEpoch() external;
@@ -65,7 +80,6 @@ interface ISTPENDLE {
     function setLpFeeReceiver(address _lpFeeReceiver) external;
     function setEpochDuration(uint128 _duration) external;
     function setRewardsSplit(uint256 holders, uint256 lp) external;
-    function setrewardsSplit(uint256 holders, uint256 lp) external;
     function setOwner(address _owner) external;
     function pause() external;
     function unpause() external;
