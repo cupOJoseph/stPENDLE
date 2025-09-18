@@ -866,6 +866,7 @@ contract stPENDLETest is Test {
 
     function test_RevertInvalidrewardsSplit() public {
         vm.expectRevert(ISTPENDLE.InvalidrewardsSplit.selector);
+        vm.prank(address(timelockController));
         vault.setRewardsSplit(2e18, 0); // 10.01%
     }
 
