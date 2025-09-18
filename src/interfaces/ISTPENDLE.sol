@@ -73,7 +73,7 @@ interface ISTPENDLE {
     event LockDurationDefaultSet(uint256 duration);
     event FeeReceiverSet(address feeReceiver);
     event RedemptionRequested(address indexed user, uint256 amount, uint256 requestEpoch);
-    event RedemptionProcessed(address indexed user, uint256 amount);
+    event RedemptionProcessed(address indexed user, uint256 amount, uint256 amountRedeemed);
     event EpochUpdated(uint256 newEpoch, uint256 lastEpochUpdate);
     event NewEpochStarted(uint256 newEpoch, uint256 lastEpochUpdate, uint256 additionalTime);
     event EpochDurationSet(uint128 duration);

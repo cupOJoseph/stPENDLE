@@ -764,6 +764,67 @@ contract stPENDLETest is Test {
         assertGe(vault.previewRedeemWithCurrentValues(aliceShares / 2), snapRedeem, "current PPS should not decrease");
     }
 
+    function test_RoundingDust() public {
+        // Goal: snapshot AUM = 100e18, totalSupply = 3e18, pending = 2e18 shares
+        // Each 1e18 share should redeem floor(100e18 / 3) = 33e18, total 66e18, leaving dust locked.
+
+        // Step 1: initial small supply of shares
+        // Deposit 3e18 before first epoch
+        pendle.mint(alice, 3e18);
+        vm.startPrank(alice);
+        pendle.approve(address(vault), 3e18);
+        vault.depositBeforeFirstEpoch(3e18, alice);
+        vm.stopPrank();
+
+        // Start first epoch
+        vault.startFirstEpoch();
+
+        // Step 2: raise AUM to 100e18 via fees (holders 100%)
+        // Ensure splits 100/0/0
+        vm.prank(address(timelockController));
+        vault.setRewardsSplit(1e18, 0);
+        // Claim fees of 97e18
+        merkleDistributor.setClaimable(address(vault), 97e18);
+        vault.claimFees(97e18, new bytes32[](0));
+
+        // Transfer 1e18 share to Bob so both have 1e18 to request
+        vm.prank(alice);
+        vault.transfer(bob, 1e18);
+
+        // Step 3: queue 1e18 share each for next epoch
+        uint256 requestEpoch = vault.currentEpoch() + 1;
+        vm.prank(alice);
+        vault.requestRedemptionForEpoch(1e18, requestEpoch);
+        vm.prank(bob);
+        vault.requestRedemptionForEpoch(1e18, requestEpoch);
+
+        // Step 4: roll epoch to take snapshot (AUM ~= 100e18, supply 3e18)
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(address(this));
+        vault.startNewEpoch();
+
+        // Snapshot preview for 1e18 share
+        uint256 expectedPerShare = 33333333333333333322; // fullMulDiv(1e18, 100e18, 3e18)
+        assertEq(vault.previewRedeem(1e18), expectedPerShare, "snapshot per-share redemption should floor");
+
+        // Alice claims
+        uint256 aPendleBefore = pendle.balanceOf(alice);
+        vm.prank(alice);
+        uint256 aClaimed = vault.claimAvailableRedemptionShares(1e18);
+        assertEq(aClaimed, expectedPerShare, "claimed shares should match requested shares");
+        assertEq(pendle.balanceOf(alice) - aPendleBefore, expectedPerShare, "Alice claim assets match floor rate");
+
+        // Bob claims
+        uint256 bPendleBefore = pendle.balanceOf(bob);
+        vm.prank(bob);
+        uint256 bClaimed = vault.claimAvailableRedemptionShares(1e18);
+        assertEq(bClaimed, expectedPerShare, "claimed shares should match requested shares");
+        assertEq(pendle.balanceOf(bob) - bPendleBefore, expectedPerShare, "Bob claim assets match floor rate");
+
+        // Reserved should be consumed exactly (no unlocked left)
+        assertLt(pendle.balanceOf(address(vault)), 2, "dust tolerance");
+    }
+
 
     function test_RevertInvalidrewardsSplit() public {
         vm.expectRevert(ISTPENDLE.InvalidrewardsSplit.selector);

@@ -212,19 +212,24 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
 
         uint256 totalPendleBalance = SafeTransferLib.balanceOf(address(asset()), address(this));
 
-        // 2) Reserve assets for redemptions in the new epoch
+        // 2) Snapshot and reserve using virtual shares math
+        uint256 aumAtStart = _vaultPosition.aumPendle;
+        uint256 supplyAtStart = totalSupply();
         uint256 pendingShares = totalPendingSharesPerEpoch[newEpoch]; // tracked in shares
         uint256 reserveAssets = 0;
-        if (pendingShares != 0) {
-            // 1:1 semantics: reserve exactly the pending shares (clamped)
-            reserveAssets = convertToAssets(pendingShares);
+        if (pendingShares != 0 && supplyAtStart != 0) {
+            reserveAssets = FixedPointMathLib.fullMulDiv(
+                pendingShares,
+                aumAtStart + 1,
+                supplyAtStart + 1
+            );
             if (reserveAssets > totalPendleBalance) reserveAssets = totalPendleBalance; // clamp
-            if (totalPendleBalance != _vaultPosition.aumPendle) revert InvalidPendleBalance();
         }
+
         // snapshot the redemption state
         RedemptionSnapshot memory redemptionSnapshot = RedemptionSnapshot({
-            aumPendleAtEpochStart: _vaultPosition.aumPendle,
-            totalSupplyAtEpochStart: totalSupply(),
+            aumPendleAtEpochStart: aumAtStart,
+            totalSupplyAtEpochStart: supplyAtStart,
             reservedAssetsAtEpochStart: reserveAssets,
             epochStartTimestamp: block.timestamp
         });
@@ -363,7 +368,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         return totalPendingSharesPerEpoch[epoch];
     }
 
-    function feeBasisPoints() external view returns (uint256) {
+    function feeBasisPoints() external pure returns (uint256) {
         return FEE_BASIS_POINTS;
     }
 
@@ -436,7 +441,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
     }
 
     function _requireIsWithinRedemptionWindow() internal view {
-        if (block.timestamp > _vaultPosition.currentEpochStart + _vaultPosition.preLockRedemptionPeriod) {
+        if (!_isWithinRedemptionWindow()) {
             revert OutsideRedemptionWindow();
         }
     }
@@ -483,14 +488,14 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         // redeem shares
         uint256 amountRedeemed = super.redeem(shares, user, user);
 
-        if (amountRedeemed != shares) revert InvalidRedemption();
-        emit RedemptionProcessed(user, shares);
+        emit RedemptionProcessed(user, shares, amountRedeemed);
 
         return amountRedeemed;
     }
 
     function _lockPendle(uint256 amount, uint128 duration) internal {
-        if (amount > totalSupply()) revert InvalidPendleBalance();
+        // Ensure sufficient unlocked PENDLE in the vault to lock
+        if (amount > SafeTransferLib.balanceOf(address(asset()), address(this))) revert InvalidPendleBalance();
         SafeTransferLib.safeApprove(address(asset()), address(votingEscrowMainchain), amount);
         votingEscrowMainchain.increaseLockPosition(_safeCast128(amount), duration);
         _vaultPosition.totalLockedPendle += amount;
@@ -528,7 +533,9 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE {
         RedemptionSnapshot memory redemptionSnapshot = redemptionSnapshotPerEpoch[_vaultPosition.currentEpoch];
         if (redemptionSnapshot.totalSupplyAtEpochStart == 0) return 0;
         return FixedPointMathLib.fullMulDiv(
-            shares, redemptionSnapshot.aumPendleAtEpochStart, redemptionSnapshot.totalSupplyAtEpochStart
+            shares,
+            redemptionSnapshot.aumPendleAtEpochStart + 1,
+            redemptionSnapshot.totalSupplyAtEpochStart + 1
         );
     }
 
