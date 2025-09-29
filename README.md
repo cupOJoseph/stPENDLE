@@ -4,8 +4,12 @@ Token and vault contract for institutional grade vePENDLE liquid staking.
 
 ## Features:
 1. Deposit PENDLE in the vault to recieve xPENDLE
-2. PENDLE received by the vault auto locks for 30 days and pays 90% of rewards to xPENDLE holders. 10% of rewards are directed to xPENDLE-PENDLE LPs
+2. PENDLE received by the vault auto locks for 2 years and pays 100% of rewards to stPENDLE holders. 0% Goes to an external treasury to be used to LP rewards for stPENDLE<>PENDLE LPs.
 3. Council governance on PENDLE votes that can be turned over to other guages or other systems in the future. Council Governance can also update the split of rewards.
+4. stPENDLE holders can requiest to exit their position, and be added to the exit queue.
+5. Holding Exit queue positions means the holder's stPENDLE earn their own rewards, but are seperated from the primary pool, possibly through a sub vault controlled by the NFT holder.
+6. NFTs for exit pool position is transferable normally (ERC-721).
+7. All PENDLE not being exited is max locked every epoch.
 
 <hr>
 
