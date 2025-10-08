@@ -10,8 +10,8 @@ import {FixedPointMathLib} from "lib/solady/src/utils/FixedPointMathLib.sol";
 import {IPMerkleDistributor} from "src/interfaces/pendle/IPMerkleDistributor.sol";
 import {IPVotingEscrowMainchain} from "src/interfaces/pendle/IPVotingEscrowMainchain.sol";
 import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
-import {ISTPENDLECrossChain} from "src/interfaces/ISTPENDLECrossChain.sol";
-import {ISTPENDLE} from "src/interfaces/ISTPENDLE.sol";
+import {IstPENDLECrossChain} from "src/interfaces/IstPENDLECrossChain.sol";
+import {IstPENDLE} from "src/interfaces/IstPENDLE.sol";
 
 // cross chain
 import {CCIPReceiver} from "lib/chainlink-ccip/chains/evm/contracts/applications/CCIPReceiver.sol";
@@ -24,7 +24,7 @@ import {IRouterClient} from "lib/chainlink-ccip/chains/evm/contracts/interfaces/
  * @dev Fully compliant with ERC-4626 tokenized vault standard using Solady
  */
 
-contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, ISTPENDLECrossChain, CCIPReceiver {
+contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, IstPENDLECrossChain, CCIPReceiver {
     using SafeTransferLib for address;
     using FixedPointMathLib for uint256;
 

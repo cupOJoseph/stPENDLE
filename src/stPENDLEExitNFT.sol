@@ -17,7 +17,7 @@ import {ISTPENDLE} from "src/interfaces/ISTPENDLE.sol";
 import {CCIPReceiver} from "lib/chainlink-ccip/chains/evm/contracts/applications/CCIPReceiver.sol";
 import {Client} from "lib/chainlink-ccip/chains/evm/contracts/libraries/Client.sol";
 import {IRouterClient} from "lib/chainlink-ccip/chains/evm/contracts/interfaces/IRouterClient.sol";
-import {ISTPENDLEExitQueue} from "src/interfaces/ISTPENDLEExitQueue.sol";
+import {IstPENDLEExitNFT} from "src/interfaces/IstPENDLEExitNFT.sol";
 // import "forge-std/console.sol";
 /**
  * @title stPENDLE - ERC-4626 Vault for PENDLE Staking
@@ -35,37 +35,42 @@ contract stPendleExitNFT is ERC721, OwnableRoles, ReentrancyGuard, IstPendleExit
 
     uint256 public constant FEE_BASIS_POINTS = 1e18; // 1e18 = 100%
 
-    address public stPendleVault;
+    ISTPENDLE public stPendleVault;
 
     uint256 public tokenIdCounter;
 
     mapping(uint256 tokenId => ExitNFT exitNFT) public exitNFTs;
+    mapping(uint256 epoch => uint256 totalWithdrawals) public totalWithdrawalsByEpoch;
 
     constructor(address _stPendleVault, address _admin, address _timelockController) ERC721("stPENDLEExitQueue", "stPENDLEExitQueue") {
         _initializeOwner(address(msg.sender));
-        stPendleVault = _stPendleVault;
+        stPendleVault = ISTPENDLE(_stPendleVault);
         _grantRoles(_admin, ADMIN_ROLE);
         _grantRoles(_timelockController, TIMELOCK_CONTROLLER_ROLE);
         _grantRoles(stPendleVault, ST_PENDLE_VAULT_ROLE);
     }
 
-    function mint(address to, uint256 stakedPendle, uint256 epoch, uint256 amount) external onlyRoles(ST_PENDLE_VAULT_ROLE) {
+    function createExitPosition(address _to, uint256 _requestedAmount) external onlyRoles(ST_PENDLE_VAULT_ROLE) {
         tokenIdCounter++;
         uint256 tokenId = tokenIdCounter;
+        uint256 epoch = stPendleVault.currentEpoch();
+
         ExitNFT memory exitNFT = ExitNFT({
             tokenId: tokenId,
-            stakedPendle: stakedPendle,
+            owner: _to,
+            requestedAmount: _requestedAmount,
             epoch: epoch,
-            amount: amount,
             claimed: false,
             claimableAt: 0
         });
-        _setExitNFT(tokenId, exitNFT);
 
-        _mint(to, tokenId);
+
+        _setExitNFT(tokenId, exitNFT);
+        totalWithdrawalsByEpoch[epoch] += amount;
+        _mint(_to, tokenId);
     }
 
     function _setExitNFT(uint256 tokenId, ExitNFT memory exitNFT) internal {
-        _setExtraData(tokenId, uint96(exitNFT.stakedPendle));
+        exitNFTs[tokenId] = exitNFT;
     }
 }
