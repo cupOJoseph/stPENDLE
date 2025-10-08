@@ -10,14 +10,14 @@ import {FixedPointMathLib} from "lib/solady/src/utils/FixedPointMathLib.sol";
 import {IPMerkleDistributor} from "src/interfaces/pendle/IPMerkleDistributor.sol";
 import {IPVotingEscrowMainchain} from "src/interfaces/pendle/IPVotingEscrowMainchain.sol";
 import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
-import {ISTPENDLECrossChain} from "src/interfaces/ISTPENDLECrossChain.sol";
-import {ISTPENDLE} from "src/interfaces/ISTPENDLE.sol";
+import {IstPENDLECrossChain} from "src/interfaces/IstPENDLECrossChain.sol";
+import {IstPENDLE} from "src/interfaces/IstPENDLE.sol";
 
 // cross chain
 import {CCIPReceiver} from "lib/chainlink-ccip/chains/evm/contracts/applications/CCIPReceiver.sol";
 import {Client} from "lib/chainlink-ccip/chains/evm/contracts/libraries/Client.sol";
 import {IRouterClient} from "lib/chainlink-ccip/chains/evm/contracts/interfaces/IRouterClient.sol";
-import {IstPENDLEExitNFT} from "src/interfaces/IstPENDLEExitNFT.sol";
+import {IstPendleExitNFT} from "src/interfaces/IstPENDLEExitNFT.sol";
 // import "forge-std/console.sol";
 /**
  * @title stPENDLE - ERC-4626 Vault for PENDLE Staking
@@ -35,14 +35,14 @@ contract stPendleExitNFT is ERC721, OwnableRoles, ReentrancyGuard, IstPendleExit
 
     uint256 public constant FEE_BASIS_POINTS = 1e18; // 1e18 = 100%
 
-    ISTPENDLE public stPendleVault;
+    IstPENDLE public stPendleVault;
 
     uint256 public tokenIdCounter;
 
     mapping(uint256 tokenId => ExitNFT exitNFT) public exitNFTs;
     mapping(uint256 epoch => uint256 totalWithdrawals) public totalWithdrawalsByEpoch;
 
-    constructor(address _stPendleVault, address _admin, address _timelockController) ERC721("stPENDLEExitQueue", "stPENDLEExitQueue") {
+    constructor(address _stPendleVault, address _admin, address _timelockController) ERC721("stPENDLEExitNFT", "stPENDLEExitNFT") {
         _initializeOwner(address(msg.sender));
         stPendleVault = ISTPENDLE(_stPendleVault);
         _grantRoles(_admin, ADMIN_ROLE);
@@ -66,7 +66,7 @@ contract stPendleExitNFT is ERC721, OwnableRoles, ReentrancyGuard, IstPendleExit
 
 
         _setExitNFT(tokenId, exitNFT);
-        totalWithdrawalsByEpoch[epoch] += amount;
+        totalWithdrawalsByEpoch[epoch] += _requestedAmount;
         _mint(_to, tokenId);
     }
 

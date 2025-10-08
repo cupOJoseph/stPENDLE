@@ -30,6 +30,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, IstPENDL
 
     uint256 public constant ADMIN_ROLE = _ROLE_0;
     uint256 public constant TIMELOCK_CONTROLLER_ROLE = _ROLE_1;
+    uint256 public constant ST_PENDLE_EXIT_POOL_ROLE = _ROLE_2;
 
     uint256 public constant FEE_BASIS_POINTS = 1e18; // 1e18 = 100%
 
@@ -615,6 +616,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, IstPENDL
         return FixedPointMathLib.fullMulDiv(
             shares, redemptionSnapshot.aumPendleAtEpochStart + 1, redemptionSnapshot.totalSupplyAtEpochStart + 1
         );
+    }
+
+    // exit pool can burn redeemed shares
+    function burn(uint256 shares, address to) public override onlyRoles(ST_PENDLE_EXIT_POOL_ROLE) returns (uint256) {
+        return _burn(to, shares);
     }
 
     /**
