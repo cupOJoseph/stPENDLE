@@ -6,12 +6,14 @@ import {OwnableRoles} from "lib/solady/src/auth/OwnableRoles.sol";
 import {SafeTransferLib} from "lib/solady/src/utils/SafeTransferLib.sol";
 import {ReentrancyGuard} from "lib/solady/src/utils/ReentrancyGuard.sol";
 import {FixedPointMathLib} from "lib/solady/src/utils/FixedPointMathLib.sol";
-
+import {VeBalanceLib} from "src/dependencies/pendle/VeBalanceLib.sol";
 import {IPMerkleDistributor} from "src/interfaces/pendle/IPMerkleDistributor.sol";
 import {IPVotingEscrowMainchain} from "src/interfaces/pendle/IPVotingEscrowMainchain.sol";
 import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
 import {IstPENDLECrossChain} from "src/interfaces/IstPENDLECrossChain.sol";
 import {IstPENDLE} from "src/interfaces/IstPENDLE.sol";
+import {IstPENDLEExitNFT} from "src/interfaces/IstPENDLEExitNFT.sol";
+import {IstPENDLEExitPool} from "src/interfaces/IstPENDLEExitPool.sol";
 
 // cross chain
 import {CCIPReceiver} from "lib/chainlink-ccip/chains/evm/contracts/applications/CCIPReceiver.sol";
@@ -24,7 +26,7 @@ import {IRouterClient} from "lib/chainlink-ccip/chains/evm/contracts/interfaces/
  * @dev Fully compliant with ERC-4626 tokenized vault standard using Solady
  */
 
-contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, IstPENDLECrossChain, CCIPReceiver {
+contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDLECrossChain, CCIPReceiver {
     using SafeTransferLib for address;
     using FixedPointMathLib for uint256;
 
@@ -39,6 +41,10 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, IstPENDL
     IPVotingEscrowMainchain public votingEscrowMainchain;
     IPVotingController public votingController;
 
+    // exit queue
+    IstPENDLEExitNFT public stPENDLEExitNFT;
+    IstPENDLEExitPool public stPENDLEExitPool;
+
     address public immutable ASSET;
     // settings
     address public feeReceiver;
@@ -48,20 +54,19 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, IstPENDL
     uint256 public rewardsSplitHolders; // default: 100% to holders (AUM)
     uint256 public rewardsSplitLp;
 
-    uint256 public rewardsSplitProtocolX18 = 0;
     address public lpFeeReceiver;
 
     // Epoch management
-
     // this vaults current information, total pendle, total locked pendle, current epoch start, last epoch update
     VaultPosition internal _vaultPosition;
 
+
     // Redemption queue management
     // redemption requests are tracked per epoch when the epoch advances all pending redemptions are cleared
-    mapping(address user => mapping(uint256 epoch => uint256 pendingRedemptionAmount)) public
-        pendingRedemptionSharesPerEpoch;
-    mapping(uint256 epoch => uint256 totalPendingRedemptions) public totalPendingSharesPerEpoch;
-    mapping(uint256 epoch => RedemptionSnapshot redemptionSnapshot) public redemptionSnapshotPerEpoch;
+    // mapping(address user => mapping(uint256 epoch => uint256 pendingRedemptionAmount)) public
+    //     pendingRedemptionSharesPerEpoch;
+    // mapping(uint256 epoch => uint256 totalPendingRedemptions) public totalPendingSharesPerEpoch;
+    // mapping(uint256 epoch => RedemptionSnapshot redemptionSnapshot) public redemptionSnapshotPerEpoch;
 
     // cross chain
     mapping(uint64 chainId => address crossChainGateway) public crossChainGatewayByChainId;
@@ -102,6 +107,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, IstPENDL
         lpFeeReceiver = config.lpFeeReceiver;
         feeReceiver = config.feeReceiver;
         feeToken = config.feeToken;
+        stPENDLEExitNFT = IstPENDLEExitNFT(config.stPENDLEExitNFTAddress);
+        stPENDLEExitPool = IstPENDLEExitPool(config.stPENDLEExitPoolAddress);
 
         _initializeOwner(address(msg.sender));
         _grantRoles(config.admin, ADMIN_ROLE);
@@ -118,8 +125,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, IstPENDL
     function deposit(uint256 amount, address receiver) public override whenNotPaused returns (uint256) {
         uint256 sharesMinted = super.deposit(amount, receiver);
         _vaultPosition.aumPendle += amount;
-        // increase lock position in vePENDLE
-        _lockPendle(amount, 0);
+        // // increase lock position in vePENDLE
+        // _lockPendle(amount, 0);
 
         return sharesMinted;
     }
@@ -209,6 +216,9 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, IstPENDL
         _vaultPosition.totalLockedPendle = totalSupply();
         _vaultPosition.currentEpoch = newEpoch;
         _vaultPosition.currentEpochStart = block.timestamp;
+        // get expiration timestamp from voting escrow mainchain
+        uint128 expirationTimestamp = votingEscrowMainchain.positionData(address(this)).expiry;
+        _vaultPosition.currentExpirationTimestamp = expirationTimestamp;
 
         emit NewEpochStarted(newEpoch, block.timestamp, _vaultPosition.epochDuration);
     }
@@ -230,30 +240,14 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, IstPENDL
 
         uint256 totalPendleBalance = SafeTransferLib.balanceOf(address(asset()), address(this));
 
-        // 2) Snapshot and reserve using virtual shares math
-        uint256 aumAtStart = _vaultPosition.aumPendle;
-        uint256 supplyAtStart = totalSupply();
-        uint256 pendingShares = totalPendingSharesPerEpoch[newEpoch]; // tracked in shares
-        uint256 reserveAssets = 0;
-        if (pendingShares != 0 && supplyAtStart != 0) {
-            reserveAssets = FixedPointMathLib.fullMulDiv(pendingShares, aumAtStart + 1, supplyAtStart + 1);
-            if (reserveAssets > totalPendleBalance) reserveAssets = totalPendleBalance; // clamp
-        }
+        // transfer requested withdrawal pendle to exit pool
+        uint256 totalRequestedRedemptionAmount = stPENDLEExitNFT.getTotalRequestedRedemptionAmount();
+        totalPendleBalance -= totalRequestedRedemptionAmount;
+        SafeTransferLib.safeTransfer(address(asset()), stPENDLEExitPool, totalRequestedRedemptionAmount);
 
-        // snapshot the redemption state
-        RedemptionSnapshot memory redemptionSnapshot = RedemptionSnapshot({
-            aumPendleAtEpochStart: aumAtStart,
-            totalSupplyAtEpochStart: supplyAtStart,
-            reservedAssetsAtEpochStart: reserveAssets,
-            epochStartTimestamp: block.timestamp
-        });
-        redemptionSnapshotPerEpoch[newEpoch] = redemptionSnapshot;
-
-        // 3) Lock all remaining available assets
-        uint256 assetsToLock = totalPendleBalance - reserveAssets;
-        if (assetsToLock != 0) {
-            _lockPendle(assetsToLock, _vaultPosition.epochDuration);
-        }
+        // lock remaining pendle
+        uint128 newExpiry = _lockPendle(totalPendleBalance, _vaultPosition.epochDuration);
+        _vaultPosition.currentExpirationTimestamp = newExpiry;
 
         // 4) Advance epoch book-keeping
         _vaultPosition.currentEpoch = newEpoch;
@@ -400,6 +394,10 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, IstPENDL
         return _vaultPosition.epochDuration;
     }
 
+    function currentExpirationTimestamp() external view returns (uint128) {
+        return _vaultPosition.currentExpirationTimestamp;
+    }
+
     function currentEpochStart() external view returns (uint256) {
         return _vaultPosition.currentEpochStart;
     }
@@ -422,6 +420,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, IstPENDL
 
     function rewardsSplit() external view returns (uint256, uint256) {
         return (rewardsSplitHolders, rewardsSplitLp);
+    }
+
+    function getCurrentLockedPosition() external view returns (uint128 _amount, uint128 _expiry) {
+        VeBalanceLib.LockedPosition memory lockedPosition = votingEscrowMainchain.positionData(address(this));
+        return (lockedPosition.amount, lockedPosition.expiry);
     }
 
     /**
@@ -463,7 +466,8 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, IstPENDL
 
     function setEpochDuration(uint128 _duration) public onlyRoles(TIMELOCK_CONTROLLER_ROLE) {
         if (_duration < 1 days) revert EpochDurationInvalid();
-        if (_duration > 730 days) revert EpochDurationInvalid();
+        // 732 days is the max duration of 2 years in days (if there is a leap year)
+        if (_duration > 732 days) revert EpochDurationInvalid();
         _vaultPosition.epochDuration = _safeCast128(_duration);
         emit EpochDurationSet(_duration);
     }
@@ -548,13 +552,15 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, ISTPENDLE, IstPENDL
         return amountRedeemed;
     }
 
-    function _lockPendle(uint256 amount, uint128 duration) internal {
+    function _lockPendle(uint256 amount, uint128 duration) internal returns (uint128 _newExpiry) {
         // Ensure sufficient unlocked PENDLE in the vault to lock
         if (amount > SafeTransferLib.balanceOf(address(asset()), address(this))) revert InvalidPendleBalance();
         SafeTransferLib.safeApprove(address(asset()), address(votingEscrowMainchain), amount);
         votingEscrowMainchain.increaseLockPosition(_safeCast128(amount), duration);
         _vaultPosition.totalLockedPendle += amount;
         emit AssetPositionIncreased(amount, _vaultPosition.currentEpoch, duration);
+        // get expiry from voting escrow mainchain
+        _newExpiry = votingEscrowMainchain.positionData(address(this)).expiry;
     }
 
     /**

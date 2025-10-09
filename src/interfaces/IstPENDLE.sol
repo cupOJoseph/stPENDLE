@@ -11,10 +11,10 @@ interface ISTPENDLE {
         uint256 aumPendle;
         uint256 totalLockedPendle;
         uint256 currentEpoch;
+        uint128 currentExpirationTimestamp;
         uint128 epochDuration;
         uint256 lastEpochUpdate;
         uint256 currentEpochStart;
-        uint256 preLockRedemptionPeriod;
     }
 
     struct RedemptionSnapshot {
@@ -26,6 +26,8 @@ interface ISTPENDLE {
 
     struct VaultConfig {
         address pendleTokenAddress;
+        address stPENDLEExitPoolAddress;
+        address stPENDLEExitNFTAddress;
         address merkleDistributorAddress;
         address votingEscrowMainchain;
         address votingControllerAddress;
@@ -33,7 +35,6 @@ interface ISTPENDLE {
         address admin;
         address lpFeeReceiver;
         address feeReceiver;
-        uint256 preLockRedemptionPeriod;
         uint256 epochDuration;
         address ccipRouter;
         address feeToken;

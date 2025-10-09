@@ -50,24 +50,33 @@ contract stPendleExitNFT is ERC721, OwnableRoles, ReentrancyGuard, IstPendleExit
         _grantRoles(stPendleVault, ST_PENDLE_VAULT_ROLE);
     }
 
-    function createExitPosition(address _to, uint256 _requestedAmount) external onlyRoles(ST_PENDLE_VAULT_ROLE) {
+    function createExitPosition(address _user, address _to, uint256 _requestedAmount) external onlyRoles(ST_PENDLE_VAULT_ROLE) {
         tokenIdCounter++;
         uint256 tokenId = tokenIdCounter;
         uint256 epoch = stPendleVault.currentEpoch();
-
+        // transfer requested shares to exit pool
+        SafeTransferLib.safeTransferFrom(address(_user), _to, address(stPendleVault.stPENDLEExitPool()), _requestedAmount);
+        
         ExitNFT memory exitNFT = ExitNFT({
             tokenId: tokenId,
             owner: _to,
             requestedAmount: _requestedAmount,
-            epoch: epoch,
+            requestedEpoch: epoch + 1,
             claimed: false,
             claimableAt: 0
         });
 
-
         _setExitNFT(tokenId, exitNFT);
         totalWithdrawalsByEpoch[epoch] += _requestedAmount;
         _mint(_to, tokenId);
+    }
+
+    function getExitNFT(uint256 _tokenId) external view returns (ExitNFT memory) {
+        return exitNFTs[_tokenId];
+    }
+    
+    function getRequestedRedemptionAmount(uint256 _tokenId) external view returns (uint256) {
+        return exitNFTs[_tokenId].requestedAmount;
     }
 
     function _setExitNFT(uint256 tokenId, ExitNFT memory exitNFT) internal {
