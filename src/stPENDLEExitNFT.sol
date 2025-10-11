@@ -36,39 +36,48 @@ contract stPendleExitNFT is ERC721, OwnableRoles, ReentrancyGuard, IstPendleExit
     uint256 public constant FEE_BASIS_POINTS = 1e18; // 1e18 = 100%
 
     IstPENDLE public stPendleVault;
+    IstPENDLEExitPool public stPENDLEExitPool;
 
     uint256 public tokenIdCounter;
 
-    mapping(uint256 tokenId => ExitNFT exitNFT) public exitNFTs;
+    mapping(uint256 tokenId => ExitNFTData exitNFTData) public exitNFTData;
     mapping(uint256 epoch => uint256 totalWithdrawals) public totalWithdrawalsByEpoch;
 
-    constructor(address _stPendleVault, address _admin, address _timelockController) ERC721("stPENDLEExitNFT", "stPENDLEExitNFT") {
+    constructor(address _stPendleVault, address _stPENDLEExitPool, address _admin, address _timelockController) ERC721("stPENDLEExitNFT", "stPENDLEExitNFT") {
         _initializeOwner(address(msg.sender));
         stPendleVault = ISTPENDLE(_stPendleVault);
+        stPENDLEExitPool = IstPENDLEExitPool(_stPENDLEExitPool);
         _grantRoles(_admin, ADMIN_ROLE);
         _grantRoles(_timelockController, TIMELOCK_CONTROLLER_ROLE);
         _grantRoles(stPendleVault, ST_PENDLE_VAULT_ROLE);
     }
 
-    function createExitPosition(address _user, address _to, uint256 _requestedAmount) external onlyRoles(ST_PENDLE_VAULT_ROLE) {
+    function createExitPosition(address _user, address _to, uint256 _shares) external onlyRoles(ST_PENDLE_VAULT_ROLE) {
         tokenIdCounter++;
         uint256 tokenId = tokenIdCounter;
         uint256 epoch = stPendleVault.currentEpoch();
         // transfer requested shares to exit pool
-        SafeTransferLib.safeTransferFrom(address(_user), _to, address(stPendleVault.stPENDLEExitPool()), _requestedAmount);
+        SafeTransferLib.safeTransferFrom(address(stPendleVault), _user, address(stPENDLEExitPool), _shares);
         
         ExitNFT memory exitNFT = ExitNFT({
-            tokenId: tokenId,
-            owner: _to,
-            requestedAmount: _requestedAmount,
+            requestedShares: _shares,
             requestedEpoch: epoch + 1,
-            claimed: false,
-            claimableAt: 0
+            claimed: false
         });
 
         _setExitNFT(tokenId, exitNFT);
-        totalWithdrawalsByEpoch[epoch] += _requestedAmount;
+        totalWithdrawalsByEpoch[epoch] += _shares;
         _mint(_to, tokenId);
+    }
+
+
+    function redeemExitPosition(address _to, uint256 _tokenId) external onlyRoles(ST_PENDLE_VAULT_ROLE) returns (uint256 pendleClaimed) {
+        if(ownerOf(_tokenId) != msg.sender) revert InvalidOwner();
+        if(exitNFTs[_tokenId].claimed) revert AlreadyClaimed();
+        pendleClaimed = stPENDLEExitPool.claimShares(_to, _tokenId);
+        // update exit nft
+        exitNFTs[_tokenId].claimed = true;
+        _burn(_tokenId);
     }
 
     function getExitNFT(uint256 _tokenId) external view returns (ExitNFT memory) {

@@ -51,7 +51,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
     bool public paused = false;
 
     // Fee split using 1e18 precision (holders + LP + protocol <= 1e18)
-    uint256 public rewardsSplitHolders; // default: 100% to holders (AUM)
+    uint256 public rewardsSplitHolders = 1e18; // default: 100% to holders (AUM)
     uint256 public rewardsSplitLp;
 
     address public lpFeeReceiver;
@@ -102,8 +102,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
         ASSET = config.pendleTokenAddress;
         _vaultPosition.preLockRedemptionPeriod = config.preLockRedemptionPeriod;
         _vaultPosition.epochDuration = _safeCast128(config.epochDuration);
-        rewardsSplitHolders = 9e17; // 90% to holders (AUM)
-        rewardsSplitLp = 1e17; // 10% to LP
         lpFeeReceiver = config.lpFeeReceiver;
         feeReceiver = config.feeReceiver;
         feeToken = config.feeToken;
@@ -125,8 +123,9 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
     function deposit(uint256 amount, address receiver) public override whenNotPaused returns (uint256) {
         uint256 sharesMinted = super.deposit(amount, receiver);
         _vaultPosition.aumPendle += amount;
-        // // increase lock position in vePENDLE
-        // _lockPendle(amount, 0);
+        // increase lock position in vePENDLE
+        // TODO: decide if we want to immediatly lock pendle or not
+         _lockPendle(amount, 0);
 
         return sharesMinted;
     }
@@ -200,6 +199,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
             // Lock all currently unlocked PENDLE
             amountToLock = SafeTransferLib.balanceOf(asset(), address(this));
         }
+
         if (amountToLock != 0) {
             _lockPendle(amountToLock, 0);
         }
@@ -241,9 +241,15 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
         uint256 totalPendleBalance = SafeTransferLib.balanceOf(address(asset()), address(this));
 
         // transfer requested withdrawal pendle to exit pool
-        uint256 totalRequestedRedemptionAmount = stPENDLEExitNFT.getTotalRequestedRedemptionAmount();
-        totalPendleBalance -= totalRequestedRedemptionAmount;
-        SafeTransferLib.safeTransfer(address(asset()), stPENDLEExitPool, totalRequestedRedemptionAmount);
+        uint256 totalRequestedRedemptionAmount = stPENDLEExitPool.getTotalRequestedShares(newEpoch);
+        // calculate redemption rate for the epoch
+        uint256 assets = convertToAssets(totalRequestedRedemptionAmount);
+        uint256 redemptionRate = assets * FEE_BASIS_POINTS / totalRequestedRedemptionAmount;
+        totalPendleBalance -= assets;
+
+        stPENDLEExitPool.setRedemptionRate(newEpoch, redemptionRate);
+
+        stPENDLEExitPool.addPendle(assets, newEpoch);
 
         // lock remaining pendle
         uint128 newExpiry = _lockPendle(totalPendleBalance, _vaultPosition.epochDuration);
@@ -259,20 +265,14 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
     /**
      * @notice Request a redeem shares for PENDLE from the vault
      * @param shares Amount of shares to redeem
+     * @param to Address to mint the exit NFT to
      */
-    function requestRedemptionForEpoch(uint256 shares, uint256 requestedEpoch) external nonReentrant whenNotPaused {
+    function requestRedemption(address to, uint256 shares) external nonReentrant whenNotPaused returns (uint256 _tokenId) {
         if (shares == 0) revert InvalidAmount();
-        _updateEpoch();
-        if (requestedEpoch == 0) requestedEpoch = _vaultPosition.currentEpoch + 1;
-        if (requestedEpoch < _vaultPosition.currentEpoch + 1) revert InvalidEpoch();
-
         if (balanceOf(msg.sender) < shares) revert InsufficientBalance();
 
-        // Add to pending redemption shares for requested epoch
-        pendingRedemptionSharesPerEpoch[msg.sender][requestedEpoch] += shares;
-        totalPendingSharesPerEpoch[requestedEpoch] += shares;
-
-        emit RedemptionRequested(msg.sender, shares, requestedEpoch);
+        _tokenId = stPENDLEExitNFT.redeemExitPosition(msg.sender, to, shares);
+        emit RedemptionRequested(msg.sender, shares);
     }
 
     /**
@@ -280,12 +280,11 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
      * @dev Can be called by the user to claim their redemption requests
      * @param shares Amount of shares to claim
      */
-    function claimAvailableRedemptionShares(uint256 shares) external nonReentrant whenNotPaused returns (uint256) {
+    function claimAvailableRedemptionShares(uint256 _tokenId) external nonReentrant whenNotPaused returns (uint256) {
         _updateEpoch();
-        if (shares == 0) revert InvalidAmount();
         _requireIsWithinRedemptionWindow();
         // Process redemption requests
-        return _processRedemption(msg.sender, shares);
+        return _processRedemption(msg.sender, _tokenId);
     }
 
     /**
@@ -368,8 +367,6 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
      */
     function getUserAvailableRedemption(address user) public view returns (uint256) {
         // if redemption window has closed, return 0
-        if (!_isWithinRedemptionWindow()) return 0;
-        if (_calculateEpoch(block.timestamp) != _vaultPosition.currentEpoch) return 0;
         uint256 pendingRedemptionShares = pendingRedemptionSharesPerEpoch[user][_vaultPosition.currentEpoch];
         return pendingRedemptionShares;
     }
@@ -530,24 +527,16 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
         return totalPendingSharesPerEpoch[epoch];
     }
 
-    function _processRedemption(address user, uint256 shares) internal returns (uint256) {
-        // assert user has shares to redeem
-        if (balanceOf(user) < shares) revert InsufficientBalance();
 
-        uint256 currentPendingRedemptionShares = getUserAvailableRedemption(user);
-        if (currentPendingRedemptionShares == 0) revert NoPendingRedemption();
-
-        // assert that the user has enough pending redemption shares
-        if (currentPendingRedemptionShares < shares) revert InsufficientShares();
-
-        // Update pending amounts
-        pendingRedemptionSharesPerEpoch[user][_vaultPosition.currentEpoch] -= shares;
-        totalPendingSharesPerEpoch[_vaultPosition.currentEpoch] -= shares;
-
-        // redeem shares
-        uint256 amountRedeemed = super.redeem(shares, user, user);
-
-        emit RedemptionProcessed(user, shares, amountRedeemed);
+    /**
+     * @notice convenience wrapper to just call redeem on the exit nft contract
+     * must be called by owner of exit nft
+     * @param _tokenId Token ID of the exit NFT
+     * @return Amount of PENDLE redeemed
+     */
+    function _processRedemption(uint256 _tokenId) internal returns (uint256) {
+        uint256 amountRedeemed = stPENDLEExitNFT.redeemExitPosition(msg.sender, _tokenId);
+        emit RedemptionProcessed(msg.sender, _tokenId, amountRedeemed);
 
         return amountRedeemed;
     }
@@ -625,28 +614,28 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
     }
 
     // exit pool can burn redeemed shares
-    function burn(uint256 shares, address to) public override onlyRoles(ST_PENDLE_EXIT_POOL_ROLE) returns (uint256) {
+    function burn(address to, uint256 shares) public override onlyRoles(ST_PENDLE_EXIT_POOL_ROLE) returns (uint256) {
         return _burn(to, shares);
     }
 
     /**
      * @notice override to revert so redeeming happens through redemption queue
      */
-    function redeem(uint256, /*shares */ address, /*to */ address /*owner*/ ) public pure override returns (uint256) {
+    function redeem(uint256 /*shares */, address /*to */, address /*owner*/ ) public pure override returns (uint256) {
         revert InvalidERC4626Function(); // this should never be called on this contract
     }
 
     /**
      * @notice override to revert so minting happens through deposit flow
      */
-    function mint(uint256, /*shares*/ address /*to*/ ) public pure override returns (uint256) {
+    function mint(uint256 /*shares*/, address /*to*/ ) public pure override returns (uint256) {
         revert InvalidERC4626Function();
     }
 
     /**
      * @notice override to revert so withdrawals happen through withdrawal queue
      */
-    function withdraw(uint256, /*assets*/ address, /*to*/ address /*owner*/ ) public pure override returns (uint256) {
+    function withdraw(uint256 /*assets*/, address /*to*/, address /*owner*/ ) public pure override returns (uint256) {
         revert InvalidERC4626Function();
     }
 }
