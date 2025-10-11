@@ -12,6 +12,10 @@ interface ISTPENDLEExitPool {
         uint256 totalRequestedShares;
     }
 
+    error InsufficientPendleBalance();
+    error InsufficientSharesBalance();
+    error InvalidEpoch();
+
     function redemptionDataByEpoch(uint256 epoch) external view returns (RedemptionData memory);
     function getTotalRequestedShares(uint256 epoch) external view returns (uint256);
     function getTotalPendle(uint256 epoch) external view returns (uint256);
