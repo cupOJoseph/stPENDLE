@@ -2,11 +2,11 @@
 pragma solidity ^0.8.26;
 
 /**
- * @title ISTPENDLECrossChain
+ * @title IstPENDLECrossChain
  * @notice Receiver for cross-chain transfers of stPENDLE.
  * this contract will mint stPENDLE on the destination chain and burn tokens being sent to another chain
  */
-interface ISTPENDLECrossChain {
+interface IstPENDLECrossChain {
     struct BridgeStPendleData {
         address sender;
         address receiver;

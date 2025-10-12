@@ -3,8 +3,8 @@ pragma solidity ^0.8.26;
 
 import {Test} from "lib/forge-std/src/Test.sol";
 
-import {stPendleCrossChainGateway} from "src/crosschain/StPendleCrossChainGateway.sol";
-import {ISTPENDLECrossChain} from "src/interfaces/ISTPENDLECrossChain.sol";
+import {stPENDLECrossChainGateway} from "src/crosschain/stPENDLECrossChainGateway.sol";
+import {IstPENDLECrossChain} from "src/interfaces/IstPENDLECrossChain.sol";
 import {Client} from "lib/chainlink-ccip/chains/evm/contracts/libraries/Client.sol";
 import {
     CCIPLocalSimulator,
@@ -13,9 +13,9 @@ import {
     BurnMintERC677Helper
 } from "@chainlink/local/src/ccip/CCIPLocalSimulator.sol";
 
-contract StPendleCrossChainGatewayHarness is stPendleCrossChainGateway {
+contract stPENDLECrossChainGatewayHarness is stPENDLECrossChainGateway {
     constructor(uint64[] memory chainIds, address[] memory gateways, address router, address admin, address feeToken)
-        stPendleCrossChainGateway(chainIds, gateways, router, admin, feeToken)
+        stPENDLECrossChainGateway(chainIds, gateways, router, admin, feeToken)
     {}
 
     function mintTo(address to, uint256 amount) external {
@@ -27,10 +27,10 @@ contract StPendleCrossChainGatewayHarness is stPendleCrossChainGateway {
     }
 }
 
-contract StPendleCrossChainGatewayTest is Test {
+contract stPENDLECrossChainGatewayTest is Test {
     CCIPLocalSimulator ccipLocalSimulator;
     IRouterClient router;
-    StPendleCrossChainGatewayHarness gateway;
+    stPENDLECrossChainGatewayHarness gateway;
 
     address admin = address(0xA11CE);
     address user = address(0xBEEF);
@@ -56,7 +56,7 @@ contract StPendleCrossChainGatewayTest is Test {
         address[] memory gateways = new address[](1);
         chains[0] = chainSrc;
         gateways[0] = gatewaySrc;
-        gateway = new StPendleCrossChainGatewayHarness(chains, gateways, address(router), admin, address(0));
+        gateway = new stPENDLECrossChainGatewayHarness(chains, gateways, address(router), admin, address(0));
         vm.deal(address(gateway), 1 ether);
     }
 
@@ -65,7 +65,7 @@ contract StPendleCrossChainGatewayTest is Test {
         msgIn.sourceChainSelector = chainSrc;
         msgIn.sender = abi.encode(gatewaySrc);
         msgIn.data =
-            abi.encode(ISTPENDLECrossChain.BridgeStPendleData({sender: other, receiver: user, amount: 123 ether}));
+            abi.encode(IstPENDLECrossChain.BridgeStPendleData({sender: other, receiver: user, amount: 123 ether}));
 
         vm.prank(address(router));
         gateway.ccipReceive(msgIn);
@@ -78,7 +78,7 @@ contract StPendleCrossChainGatewayTest is Test {
         msgIn.sourceChainSelector = chainSrc;
         msgIn.sender = abi.encode(other); // not authorized
         msgIn.data =
-            abi.encode(ISTPENDLECrossChain.BridgeStPendleData({sender: other, receiver: user, amount: 1 ether}));
+            abi.encode(IstPENDLECrossChain.BridgeStPendleData({sender: other, receiver: user, amount: 1 ether}));
 
         vm.expectRevert();
         vm.prank(address(router));

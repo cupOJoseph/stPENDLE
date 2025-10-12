@@ -8,7 +8,7 @@ pragma solidity ^0.8.26;
  import {IstPENDLEExitNFT} from "src/interfaces/IstPENDLEExitNFT.sol";
  import {IstPENDLEExitPool} from "src/interfaces/IstPENDLEExitPool.sol";
 
-contract stPENDLEExitPool is OwnableRoles, ReentrancyGuard, ISTPENDLEExitPool {
+contract stPENDLEExitPool is OwnableRoles, ReentrancyGuard, IstPENDLEExitPool {
 
     uint256 public constant ADMIN_ROLE = _ROLE_0;
     uint256 public constant ST_PENDLE_VAULT_ROLE = _ROLE_1;
@@ -20,29 +20,21 @@ contract stPENDLEExitPool is OwnableRoles, ReentrancyGuard, ISTPENDLEExitPool {
 
     uint256 public constant DECIMAL_PRECISION = 1e18;
 
-    struct RedemptionData {
-        uint256 redemptionRate;
-        uint256 totalPendle;
-        uint256 totalRequestedShares;
-    }
-
     mapping(uint256 epoch => RedemptionData redemptionData) public redemptionDataByEpoch;
-
-
 
     event SharesClaimed(address indexed user, uint256 requestedShares, uint256 amountRedeemed, uint256 tokenId);
     event RedemptionRateSet(uint256 epoch, uint256 redemptionRate);
     event SharesAdded(address indexed user, uint256 shares, uint256 epoch);
     event PendleAdded(uint256 amount, uint256 epoch);
 
-    constructor(address _stPENDLE, address _stPENDLEExitNFT, address _admin) {
+    constructor(address _stPENDLE, address _stPENDLEExitNFT, address _admin, address _pendle) {
         _initializeOwner(address(msg.sender));
         stPENDLEExitNFT = IstPENDLEExitNFT(_stPENDLEExitNFT);
         stPENDLE = IstPENDLE(_stPENDLE);
-        pendle = IERC20(stPENDLE.ASSET());
+        pendle = IERC20(_pendle);
         _grantRoles(_admin, ADMIN_ROLE);
-        _grantRoles(stPENDLEExitNFT, ST_PENDLE_EXIT_NFT_ROLE);
-        _grantRoles(stPENDLE, ST_PENDLE_VAULT_ROLE);
+        _grantRoles(_stPENDLEExitNFT, ST_PENDLE_EXIT_NFT_ROLE);
+        _grantRoles(_stPENDLE, ST_PENDLE_VAULT_ROLE);
         renounceOwnership();
     }
 
@@ -59,19 +51,21 @@ contract stPENDLEExitPool is OwnableRoles, ReentrancyGuard, ISTPENDLEExitPool {
     }
 
     function claimShares(address _to, uint256 tokenId) external nonReentrant onlyRoles(ST_PENDLE_EXIT_NFT_ROLE) returns (uint256 amountRedeemed) {
-        IstPENDLEExitNFT.ExitNFTData memory exitNFT = stPENDLEExitNFT.exitNFTData(tokenId);
+        IstPENDLEExitNFT.ExitNFTData memory exitNFT = stPENDLEExitNFT.getExitNFTData(tokenId);
+        uint256 currentEpoch = stPENDLE.currentEpoch();
+        if(exitNFT.requestedEpoch > currentEpoch) revert InvalidEpoch();
         if(redemptionDataByEpoch[exitNFT.requestedEpoch].redemptionRate == 0) revert InvalidEpoch();
-        _requireAvailableShares(exitNFT.requestedAmount, exitNFT.requestedEpoch);
-        uint256 amount = _calcSharesToPendle(exitNFT.requestedAmount, exitNFT.requestedEpoch);
+        _requireAvailableShares(exitNFT.requestedShares, exitNFT.requestedEpoch);
+        uint256 amount = _calcSharesToPendle(exitNFT.requestedShares, exitNFT.requestedEpoch);
         _requireAvailablePendle(amount, exitNFT.requestedEpoch);
         // update redemption data
-        redemptionDataByEpoch[exitNFT.requestedEpoch].totalRequestedShares -= exitNFT.requestedAmount;
+        redemptionDataByEpoch[exitNFT.requestedEpoch].totalRequestedShares -= exitNFT.requestedShares;
         redemptionDataByEpoch[exitNFT.requestedEpoch].totalPendle -= amount;
         // burn redeemed shares
-        amountRedeemed = stPENDLE.burn(address(this), exitNFT.requestedAmount);
+        stPENDLE.finalizeClaim(address(this), exitNFT.requestedShares, amount);
         // transfer redeemed pendle to user
         SafeTransferLib.safeTransfer(address(stPENDLE), _to, amount);
-        emit SharesClaimed(_to, exitNFT.requestedAmount, amountRedeemed, tokenId);
+        emit SharesClaimed(_to, exitNFT.requestedShares, amount, tokenId);
     }
 
     function setRedemptionRate(uint256 _epoch, uint256 _redemptionRate) external onlyRoles(ST_PENDLE_VAULT_ROLE) {
@@ -79,20 +73,24 @@ contract stPENDLEExitPool is OwnableRoles, ReentrancyGuard, ISTPENDLEExitPool {
         emit RedemptionRateSet(_epoch, _redemptionRate);
     }
 
-    function getTotalRequestedShares(uint256 _epoch) external view returns (uint256) {
+    function getRedemptionDataByEpoch(uint256 _epoch) external view returns (RedemptionData memory) {
+        return redemptionDataByEpoch[_epoch];
+    }
+
+    function getTotalRequestedSharesPerEpoch(uint256 _epoch) external view returns (uint256) {
         return redemptionDataByEpoch[_epoch].totalRequestedShares;
     }
 
-    function getTotalPendle(uint256 _epoch) external view returns (uint256) {
+    function getTotalPendlePerEpoch(uint256 _epoch) external view returns (uint256) {
         return redemptionDataByEpoch[_epoch].totalPendle;
     }
 
-    function getTotalAssets() external view returns (uint256) {
+    function getTotalAssets() external view override returns (uint256) {
         return pendle.balanceOf(address(this));
     }
 
-    function getTotalShares() external view returns (uint256) {
-        return stPENDLE.balanceOf(address(this));
+    function getTotalShares() external view override returns (uint256) {
+        return IERC20(address(stPENDLE)).balanceOf(address(this));
     }
 
     function _requireAvailablePendle(uint256 _amount, uint256 _epoch) internal view {
@@ -100,7 +98,7 @@ contract stPENDLEExitPool is OwnableRoles, ReentrancyGuard, ISTPENDLEExitPool {
     }
 
     function _requireAvailableShares(uint256 _amount, uint256 _epoch) internal view {
-        if (shareBalance < _amount) revert InsufficientSharesBalance();
+        if (redemptionDataByEpoch[_epoch].totalRequestedShares < _amount) revert InsufficientSharesBalance();
     }
 
     function _calcSharesToPendle(uint256 _shares, uint256 _epoch) internal view returns (uint256) {
@@ -110,7 +108,7 @@ contract stPENDLEExitPool is OwnableRoles, ReentrancyGuard, ISTPENDLEExitPool {
     function updateExitQueue(address _newExitQueue) external onlyRoles(ADMIN_ROLE) {
         address oldExitQueue = address(stPENDLEExitNFT);
         stPENDLEExitNFT = IstPENDLEExitNFT(_newExitQueue);
-        _grantRoles(stPENDLEExitNFT, ST_PENDLE_EXIT_NFT_ROLE);
-        _revokeRoles(oldExitQueue, ST_PENDLE_EXIT_NFT_ROLE);
+        _grantRoles(address(stPENDLEExitNFT), ST_PENDLE_EXIT_NFT_ROLE);
+        _removeRoles(oldExitQueue, ST_PENDLE_EXIT_NFT_ROLE);
     }
 }

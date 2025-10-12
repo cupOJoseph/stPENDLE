@@ -5,7 +5,7 @@ import {IPMerkleDistributor} from "src/interfaces/pendle/IPMerkleDistributor.sol
 import {IPVotingEscrowMainchain} from "src/interfaces/pendle/IPVotingEscrowMainchain.sol";
 import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
 
-interface ISTPENDLE {
+interface IstPENDLE {
     // ========= Types =========
     struct VaultPosition {
         uint256 aumPendle;
@@ -43,15 +43,10 @@ interface ISTPENDLE {
     // ========= Core actions =========
     function claimFees(uint256 totalAccrued, bytes32[] calldata proof) external;
     function startNewEpoch() external;
-
-    // ========= Redemption queue =========
-    function requestRedemptionForEpoch(uint256 shares, uint256 epoch) external;
-    function claimAvailableRedemptionShares(uint256 shares) external returns (uint256 assetsRedeemed);
+    function startFirstEpoch() external;
+    function finalizeClaim(address account, uint256 shares,uint256 amount) external;
 
     // Per-epoch state
-    function totalRequestedRedemptionAmountPerEpoch(uint256 epoch) external view returns (uint256);
-    function getAvailableRedemptionAmount() external view returns (uint256);
-    function getUserAvailableRedemption(address user) external view returns (uint256);
     function currentEpoch() external returns (uint256);
 
     // ========= Public views / config =========
@@ -66,15 +61,9 @@ interface ISTPENDLE {
     function lpFeeReceiver() external view returns (address);
     function paused() external view returns (bool);
     function epochDuration() external view returns (uint128);
-    function preLockRedemptionPeriod() external view returns (uint256);
     function totalLockedPendle() external view returns (uint256);
     function rewardsSplit() external view returns (uint256 holders, uint256 lp);
-
     function lastEpochUpdate() external view returns (uint256);
-
-    // Auto-generated mapping getters
-    function pendingRedemptionSharesPerEpoch(address user, uint256 epoch) external view returns (uint256);
-    function totalPendingSharesPerEpoch(uint256 epoch) external view returns (uint256);
 
     // ========= Governance / Admin =========
     function setFeeReceiver(address _feeReceiver) external;

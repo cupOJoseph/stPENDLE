@@ -12,12 +12,12 @@ import {IPVotingEscrowMainchain} from "src/interfaces/pendle/IPVotingEscrowMainc
 import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
 import {IstPENDLECrossChain} from "src/interfaces/IstPENDLECrossChain.sol";
 import {IstPENDLE} from "src/interfaces/IstPENDLE.sol";
-
+import {IstPENDLEExitPool} from "src/interfaces/IstPENDLEExitPool.sol";
 // cross chain
 import {CCIPReceiver} from "lib/chainlink-ccip/chains/evm/contracts/applications/CCIPReceiver.sol";
 import {Client} from "lib/chainlink-ccip/chains/evm/contracts/libraries/Client.sol";
 import {IRouterClient} from "lib/chainlink-ccip/chains/evm/contracts/interfaces/IRouterClient.sol";
-import {IstPendleExitNFT} from "src/interfaces/IstPENDLEExitNFT.sol";
+import {IstPENDLEExitNFT} from "src/interfaces/IstPENDLEExitNFT.sol";
 // import "forge-std/console.sol";
 /**
  * @title stPENDLE - ERC-4626 Vault for PENDLE Staking
@@ -25,7 +25,7 @@ import {IstPendleExitNFT} from "src/interfaces/IstPENDLEExitNFT.sol";
  * @dev Fully compliant with ERC-4626 tokenized vault standard using Solady
  */
 
-contract stPendleExitNFT is ERC721, OwnableRoles, ReentrancyGuard, IstPendleExitNFT {
+contract stPENDLEExitNFT is ERC721, OwnableRoles, ReentrancyGuard, IstPENDLEExitNFT {
     using SafeTransferLib for address;
     using FixedPointMathLib for uint256;
 
@@ -43,13 +43,13 @@ contract stPendleExitNFT is ERC721, OwnableRoles, ReentrancyGuard, IstPendleExit
     mapping(uint256 tokenId => ExitNFTData exitNFTData) public exitNFTData;
     mapping(uint256 epoch => uint256 totalWithdrawals) public totalWithdrawalsByEpoch;
 
-    constructor(address _stPendleVault, address _stPENDLEExitPool, address _admin, address _timelockController) ERC721("stPENDLEExitNFT", "stPENDLEExitNFT") {
+    constructor(address _stPendleVault, address _stPENDLEExitPool, address _admin, address _timelockController) {
         _initializeOwner(address(msg.sender));
-        stPendleVault = ISTPENDLE(_stPendleVault);
+        stPendleVault = IstPENDLE(_stPendleVault);
         stPENDLEExitPool = IstPENDLEExitPool(_stPENDLEExitPool);
         _grantRoles(_admin, ADMIN_ROLE);
         _grantRoles(_timelockController, TIMELOCK_CONTROLLER_ROLE);
-        _grantRoles(stPendleVault, ST_PENDLE_VAULT_ROLE);
+        _grantRoles(_stPendleVault, ST_PENDLE_VAULT_ROLE);
     }
 
     function createExitPosition(address _user, address _to, uint256 _shares) external onlyRoles(ST_PENDLE_VAULT_ROLE) {
@@ -59,13 +59,13 @@ contract stPendleExitNFT is ERC721, OwnableRoles, ReentrancyGuard, IstPendleExit
         // transfer requested shares to exit pool
         SafeTransferLib.safeTransferFrom(address(stPendleVault), _user, address(stPENDLEExitPool), _shares);
         
-        ExitNFT memory exitNFT = ExitNFT({
+        ExitNFTData memory exitNFT = ExitNFTData({
             requestedShares: _shares,
             requestedEpoch: epoch + 1,
             claimed: false
         });
 
-        _setExitNFT(tokenId, exitNFT);
+        _setExitNFTData(tokenId, exitNFT);
         totalWithdrawalsByEpoch[epoch] += _shares;
         _mint(_to, tokenId);
     }
@@ -73,22 +73,34 @@ contract stPendleExitNFT is ERC721, OwnableRoles, ReentrancyGuard, IstPendleExit
 
     function redeemExitPosition(address _to, uint256 _tokenId) external onlyRoles(ST_PENDLE_VAULT_ROLE) returns (uint256 pendleClaimed) {
         if(ownerOf(_tokenId) != msg.sender) revert InvalidOwner();
-        if(exitNFTs[_tokenId].claimed) revert AlreadyClaimed();
+        if(exitNFTData[_tokenId].claimed) revert AlreadyClaimed();
         pendleClaimed = stPENDLEExitPool.claimShares(_to, _tokenId);
         // update exit nft
-        exitNFTs[_tokenId].claimed = true;
+        exitNFTData[_tokenId].claimed = true;
         _burn(_tokenId);
     }
 
-    function getExitNFT(uint256 _tokenId) external view returns (ExitNFT memory) {
-        return exitNFTs[_tokenId];
+    function getExitNFTData(uint256 _tokenId) external view returns (ExitNFTData memory) {
+        return exitNFTData[_tokenId];
     }
     
     function getRequestedRedemptionAmount(uint256 _tokenId) external view returns (uint256) {
-        return exitNFTs[_tokenId].requestedAmount;
+        return exitNFTData[_tokenId].requestedShares;
     }
 
-    function _setExitNFT(uint256 tokenId, ExitNFT memory exitNFT) internal {
-        exitNFTs[tokenId] = exitNFT;
+    function name() public pure override returns (string memory) {
+        return "stPENDLEExitNFT";
+    }
+
+    function symbol() public pure override returns (string memory) {
+        return "stPENDLEEx";
+    }
+    // TODO: implement tokenURI
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        return "";
+    }
+
+    function _setExitNFTData(uint256 tokenId, ExitNFTData memory exitNFT) internal {
+        exitNFTData[tokenId] = exitNFT;
     }
 }

@@ -5,7 +5,7 @@ import {IPMerkleDistributor} from "src/interfaces/pendle/IPMerkleDistributor.sol
 import {IPVotingEscrowMainchain} from "src/interfaces/pendle/IPVotingEscrowMainchain.sol";
 import {IPVotingController} from "src/interfaces/pendle/IPVotingController.sol";
 
-interface ISTPENDLEExitPool {
+interface IstPENDLEExitPool {
     struct RedemptionData {
         uint256 redemptionRate;
         uint256 totalPendle;
@@ -16,9 +16,9 @@ interface ISTPENDLEExitPool {
     error InsufficientSharesBalance();
     error InvalidEpoch();
 
-    function redemptionDataByEpoch(uint256 epoch) external view returns (RedemptionData memory);
-    function getTotalRequestedShares(uint256 epoch) external view returns (uint256);
-    function getTotalPendle(uint256 epoch) external view returns (uint256);
+    function getRedemptionDataByEpoch(uint256 epoch) external view returns (RedemptionData memory);
+    function getTotalShares() external view returns (uint256);
+    function getTotalAssets() external view returns (uint256);
     function setRedemptionRate(uint256 epoch, uint256 redemptionRate) external;
     function addShares(address user, uint256 shares, uint256 epoch) external;
     function addPendle(uint256 amount, uint256 epoch) external;
