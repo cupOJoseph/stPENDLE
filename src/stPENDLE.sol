@@ -161,7 +161,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
         _vaultPosition.aumPendle += amount;
         return sharesMinted;
     }
-
+    // TODO: This function needs to be completley reworked
     /**
      * @dev This function is called by the anyone to claim fees to the vault and lock them in the current epoch.
      * @param totalAccrued The total amount of fees accrued to the vault
@@ -169,34 +169,34 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
      * This should be done daily or more often to compound rewards.
      */
     function claimFees(uint256 totalAccrued, bytes32[] calldata proof) public nonReentrant whenNotPaused {
-        if (totalAccrued == 0) revert InvalidAmount();
-        // will revert if proof or totalAccrued is invalid
-        uint256 amountClaimed = merkleDistributor.claim(address(this), totalAccrued, proof);
-        emit FeesClaimed(amountClaimed, block.timestamp);
+        // if (totalAccrued == 0) revert InvalidAmount();
+        // // will revert if proof or totalAccrued is invalid
+        // uint256 amountClaimed = merkleDistributor.claim(address(this), totalAccrued, proof);
+        // emit FeesClaimed(amountClaimed, block.timestamp);
 
-        // Split fees (1e18 precision): holders (AUM), LP (transfer), protocol (transfer)
-        uint256 holdersAmount = FixedPointMathLib.fullMulDiv(amountClaimed, rewardsSplitHolders, FEE_BASIS_POINTS);
-        uint256 lpAmount = FixedPointMathLib.fullMulDiv(amountClaimed, rewardsSplitLp, FEE_BASIS_POINTS);
-        uint256 protocolAmount = amountClaimed - holdersAmount - lpAmount; // remainder to protocol
+        // // Split fees (1e18 precision): holders (AUM), LP (transfer), protocol (transfer)
+        // uint256 holdersAmount = FixedPointMathLib.fullMulDiv(amountClaimed, rewardsSplitHolders, FEE_BASIS_POINTS);
+        // uint256 lpAmount = FixedPointMathLib.fullMulDiv(amountClaimed, rewardsSplitLp, FEE_BASIS_POINTS);
+        // uint256 protocolAmount = amountClaimed - holdersAmount - lpAmount; // remainder to protocol
 
-        if (holdersAmount != 0) {
-            _vaultPosition.aumPendle += holdersAmount;
-        }
+        // if (holdersAmount != 0) {
+        //     _vaultPosition.aumPendle += holdersAmount;
+        // }
 
-        if (lpAmount != 0) {
-            SafeTransferLib.safeTransfer(asset(), lpFeeReceiver, lpAmount);
-        }
+        // if (lpAmount != 0) {
+        //     SafeTransferLib.safeTransfer(asset(), lpFeeReceiver, lpAmount);
+        // }
 
-        if (protocolAmount != 0) {
-            SafeTransferLib.safeTransfer(asset(), feeReceiver, protocolAmount);
-        }
+        // if (protocolAmount != 0) {
+        //     SafeTransferLib.safeTransfer(asset(), feeReceiver, protocolAmount);
+        // }
 
-        // Lock behavior
-        uint256 amountToLock = holdersAmount; // lock the portion kept by holders by default
+        // // Lock behavior
+        // uint256 amountToLock = holdersAmount; // lock the portion kept by holders by default
 
-        if (amountToLock != 0) {
-            _lockPendle(amountToLock, 0);
-        }
+        // if (amountToLock != 0) {
+        //     _lockPendle(amountToLock, 0);
+        // }
     }
 
     /**
@@ -238,6 +238,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
         // transfer requested withdrawal pendle to exit pool
         IstPENDLEExitPool.RedemptionData memory  redemptionData = stPENDLEExitPool.getRedemptionDataByEpoch(newEpoch);
         // calculate redemption rate for the epoch
+        if(redemptionData.totalRequestedShares > 0) {
         uint256 assets = convertToAssets(redemptionData.totalRequestedShares);
         uint256 redemptionRate = assets * FEE_BASIS_POINTS / redemptionData.totalRequestedShares;
         totalPendleBalance -= assets;
@@ -245,7 +246,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
         stPENDLEExitPool.setRedemptionRate(newEpoch, redemptionRate);
 
         stPENDLEExitPool.addPendle(assets, newEpoch);
-
+        }
         // lock remaining pendle
         uint128 newExpiry = _lockPendle(totalPendleBalance, _vaultPosition.epochDuration);
         _vaultPosition.currentExpirationTimestamp = newExpiry;

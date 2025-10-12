@@ -24,325 +24,63 @@ import {
     BurnMintERC677Helper
 } from "@chainlink/local/src/ccip/CCIPLocalSimulator.sol";
 import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
+import {Setup} from "./Setup.t.sol";
 
 /// forge-lint: disable-start(all)
-// Mock contracts for testing
-contract MockVotingEscrowMainchain {
-    MockPENDLE public pendle;
-    MockMerkleDistributor public merkleDistributor;
 
-    mapping(address => uint128) public balances;
-    mapping(address => uint128) public lockedBalances;
-    mapping(address => uint128) public unlockTimes;
-    uint128 public totalSupply;
+contract stPENDLETest is Setup {
+    function startFirstEpoch() public {
+        //fast forward 2 years so first epoch == 1
+        vm.warp(block.timestamp + 105 weeks);
+        // deposit initial pendleBalance
+        pendle.approve(address(vault), DEPOSIT_AMOUNT);
+        vault.depositBeforeFirstEpoch(DEPOSIT_AMOUNT, feeReceiver);
 
-    constructor(MockPENDLE _pendle, MockMerkleDistributor _merkleDistributor) {
-        pendle = _pendle;
-        merkleDistributor = _merkleDistributor;
+        vm.startPrank(address(this));
+        vault.startFirstEpoch();
+        vm.stopPrank();
     }
 
-    function increaseLockPosition(uint128 additionalAmountToLock, uint128 expiry) external returns (uint128) {
-        require(additionalAmountToLock > 0, "Additional amount to lock must be greater than 0");
-        pendle.transferFrom(msg.sender, address(this), additionalAmountToLock);
-        merkleDistributor.setClaimable(msg.sender, additionalAmountToLock / 10);
-        balances[msg.sender] += additionalAmountToLock;
-        lockedBalances[msg.sender] += additionalAmountToLock;
-        unlockTimes[msg.sender] = expiry;
-        return lockedBalances[msg.sender];
+    function test_startFirstEpoch() public {
+        startFirstEpoch();
+        assertEq(vault.currentEpoch(), 1, "epoch should be 1");
+        assertEq(vault.currentEpochStart(), block.timestamp, "epoch start should be current timestamp");
+        assertEq(vault.epochDuration(), 730 days, "epoch duration should be 30 days");
+        assertEq(vault.totalLockedPendle(), DEPOSIT_AMOUNT, "total locked pendle should be initial deposit");
+        assertEq(vault.totalSupply(), DEPOSIT_AMOUNT, "total supply should be initial deposit");
+        assertEq(vault.totalSupply(), DEPOSIT_AMOUNT, "vault should have initial deposit");
     }
 
-    function withdraw() external returns (uint128) {
-        uint128 balance = lockedBalances[msg.sender];
-        pendle.transfer(msg.sender, balance);
-        lockedBalances[msg.sender] = 0;
-        balances[msg.sender] = 0;
-        return balance;
+    function test_startFirstEpoch_RevertsIfCalledAfterFirstEpoch() public {
+        startFirstEpoch();
+        vm.expectRevert(IstPENDLE.InvalidEpoch.selector);
+        vault.startFirstEpoch();
     }
 
-    function balanceOf(address user) public view returns (uint128) {
-        return balances[user];
+    function test_startFirstEpoch_RevertInvalidPendleBalance() public {
+        pendle.mint(address(this), 0);
+        vm.expectRevert(IstPENDLE.InvalidPendleBalance.selector);
+        vault.startFirstEpoch();
     }
 
-    function positionData(address user) external view returns (uint128 amount, uint128 expiry) {
-        return (balanceOf(user), unlockTimes[user]);
+    function test_Constructor() public view {
+        assertEq(address(vault.votingEscrowMainchain()), address(votingEscrowMainchain));
+        assertEq(address(vault.merkleDistributor()), address(merkleDistributor));
+        assertEq(address(vault.votingController()), address(votingController));
     }
 
-    function totalSupplyStored() external view returns (uint128) {
-        return totalSupply;
+    function test_Deposit() public {
+        vm.startPrank(alice);
+
+        pendle.approve(address(vault), DEPOSIT_AMOUNT);
+        uint256 shares = vault.deposit(DEPOSIT_AMOUNT, alice);
+
+        assertGt(shares, 0, "Should receive shares");
+        assertEq(vault.balanceOf(alice), shares, "User should have correct share balance");
+        assertEq(votingEscrowMainchain.balanceOf(address(vault)), DEPOSIT_AMOUNT, "Vault should have locked PENDLE");
+
+        vm.stopPrank();
     }
-
-    function totalSupplyCurrent() external view returns (uint128) {
-        return totalSupply;
-    }
-
-    function totalSupplyAndBalanceCurrent(address user) external view returns (uint128, uint128) {
-        return (totalSupply, balances[user]);
-    }
-
-    function mint(address to, uint128 amount) external {
-        balances[to] += amount;
-        totalSupply += amount;
-    }
-}
-
-contract MockMerkleDistributor {
-    mapping(address => uint256) public claimableAmounts;
-    MockPENDLE public pendle;
-
-    constructor(MockPENDLE _mockErc20) {
-        pendle = _mockErc20;
-        pendle.mint(address(this), 1000e18);
-    }
-
-    function setClaimable(address account, uint256 amount) external {
-        claimableAmounts[account] = amount;
-    }
-
-    function claimable(address account) external view returns (uint256) {
-        return claimableAmounts[account];
-    }
-
-    function claim(address account, uint256, /* amount */ bytes32[] calldata /* merkleProof */ )
-        external
-        returns (uint256)
-    {
-        uint256 claimableAmount = claimableAmounts[account];
-        claimableAmounts[account] = 0;
-        pendle.mint(account, claimableAmount);
-        return claimableAmount;
-    }
-}
-
-contract MockVotingController {
-    function vote(uint256 poll, uint256 voteAmount) external {
-        // Mock implementation
-    }
-}
-
-contract MockUSDT is ERC20 {
-    constructor() {}
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-
-    function name() public pure override returns (string memory) {
-        return "USDTether";
-    }
-
-    function symbol() public pure override returns (string memory) {
-        return "USDT";
-    }
-}
-
-contract MockPENDLE is ERC20 {
-    constructor() {}
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-
-    function name() public pure override returns (string memory) {
-        return "PENDLE";
-    }
-
-    function symbol() public pure override returns (string memory) {
-        return "PEN";
-    }
-}
-
-contract stPENDLETest is Test {
-    // stPENDLE public vault;
-    // MockVotingEscrowMainchain public votingEscrowMainchain;
-    // MockMerkleDistributor public merkleDistributor;
-    // MockVotingController public votingController;
-    // MockUSDT public usdt;
-    // MockPENDLE public pendle;
-    // TimelockController public timelockController;
-    // IstPENDLECrossChain public crossChainGateway;
-    // Create3Deployer public create3Deployer;
-    // stPENDLEExitPool public exitPool;
-    // stPENDLEExitNFT public exitNFT;
-
-    // // ccip
-    // CCIPLocalSimulator public ccipLocalSimulator;
-    // LinkToken linkToken;
-    // uint64 destinationChainSelector;
-    // IRouterClient router;
-
-    // address public alice = address(0x1);
-    // address public bob = address(0x2);
-    // address public charlie = address(0x3);
-    // address public david = address(0x4);
-    // address public eve = address(0x5);
-    // address public feeReceiver = address(0x6);
-    // address public lpFeeReceiver = address(0x7);
-
-    // uint256 public constant INITIAL_BALANCE = 1000e18;
-    // uint256 public constant DEPOSIT_AMOUNT = 100e18;
-
-    // event FeeSwitchSet(bool enabled);
-    // event UseUSDTForFeesSet(bool useUSDT);
-    // event WithdrawalRequested(address indexed user, uint256 amount, uint256 requestTime);
-    // event WithdrawalProcessed(address indexed user, uint256 amount);
-
-    // function setUp() public {
-    //     // warp state ahead so first epoch == 1
-    //     vm.warp(block.timestamp + 31 days);
-    //     usdt = new MockUSDT();
-    //     pendle = new MockPENDLE();
-
-    //     ccipLocalSimulator = new CCIPLocalSimulator();
-
-    //     (uint64 chainSelector, IRouterClient sourceRouter,,, LinkToken link, BurnMintERC677Helper ccipBnM,) =
-    //         ccipLocalSimulator.configuration();
-
-    //     router = sourceRouter;
-    //     destinationChainSelector = chainSelector;
-    //     linkToken = link;
-
-    //     // Deploy mock contracts
-    //     merkleDistributor = new MockMerkleDistributor(pendle);
-    //     votingController = new MockVotingController();
-    //     votingEscrowMainchain = new MockVotingEscrowMainchain(pendle, merkleDistributor);
-    //     address[] memory proposers = new address[](1);
-    //     address[] memory executors = new address[](1);
-    //     proposers[0] = address(this);
-    //     executors[0] = address(this);
-    //     timelockController = new TimelockController(1 hours, proposers, executors, address(this));
-    //     // deploy create3 deployer
-    //     create3Deployer = new Create3Deployer();
-
-    //     bytes32 exitPoolSalt = keccak256(abi.encodePacked("stpendle.exitpool.v1"));
-    //     address predictedExitPool = create3Deployer.predict(exitPoolSalt);
-    //     if (predictedExitPool.code.length == 0) {
-    //         create3Deployer.deploy(exitPoolSalt, abi.encodePacked(type(stPENDLEExitPool).creationCode, abi.encode(address(vault), address(exitNFT), address(this), address(pendle))));
-    //     }
-    //     exitPool = stPENDLEExitPool(predictedExitPool);
-        
-    //     bytes32 exitNFTSalt = keccak256(abi.encodePacked("stpendle.exitnft.v1"));
-    //     address predictedExitNFT = create3Deployer.predict(exitNFTSalt);
-    //     if (predictedExitNFT.code.length == 0) {
-    //         create3Deployer.deploy(exitNFTSalt, abi.encodePacked(type(stPENDLEExitNFT).creationCode, abi.encode(address(vault), address(exitPool), address(this), address(timelockController))));
-    //     }
-    //     exitNFT = stPENDLEExitNFT(predictedExitNFT);
-
- 
-
-       
-       
-    //     IstPENDLE.VaultConfig memory config = IstPENDLE.VaultConfig({
-    //         pendleTokenAddress: address(pendle),
-    //         merkleDistributorAddress: address(merkleDistributor),
-    //         votingEscrowMainchain: address(votingEscrowMainchain),
-    //         votingControllerAddress: address(votingController),
-    //         timelockController: address(timelockController),
-    //         admin: address(this),
-    //         lpFeeReceiver: lpFeeReceiver,
-    //         feeReceiver: feeReceiver,
-    //         epochDuration: 730 days,
-    //         stPENDLEExitPoolAddress: address(exitPool),
-    //         stPENDLEExitNFTAddress: address(exitNFT),
-    //         ccipRouter: address(router),
-    //         feeToken: address(0)
-    //     });
-
-    //            bytes32 vaultSalt = keccak256(abi.encodePacked("stpendle.vault.v1"));
-    //     address predictedVault = create3Deployer.predict(vaultSalt);
-    //     if (predictedVault.code.length == 0) {
-    //         create3Deployer.deploy(vaultSalt, abi.encodePacked(type(stPENDLE).creationCode, abi.encode(config)));
-    //     }
-    //     vault = stPENDLE(predictedVault);
-
-    //     // Deploy vault
-    //     // deploy cross chain gateway
-    //     uint64[] memory chainIds = new uint64[](1);
-    //     address[] memory gateways = new address[](1);
-    //     chainIds[0] = destinationChainSelector;
-    //     gateways[0] = address(ccipLocalSimulator);
-    //     crossChainGateway =
-    //         new stPENDLECrossChainGateway(chainIds, gateways, address(router), address(this), address(0));
-
-    //     vm.deal(address(vault), 1000e18);
-    //     vm.deal(address(crossChainGateway), 1000e18);
-
-    //     // Setup initial balances
-    //     pendle.mint(address(this), INITIAL_BALANCE);
-    //     pendle.mint(alice, INITIAL_BALANCE);
-    //     pendle.mint(bob, INITIAL_BALANCE);
-    //     pendle.mint(charlie, INITIAL_BALANCE);
-    //     pendle.mint(david, INITIAL_BALANCE);
-    //     pendle.mint(eve, INITIAL_BALANCE);
-
-    //     // Setup fee receiver
-    //     vault.setFeeReceiver(feeReceiver);
-
-    //     // Label addresses for better test output
-    //     vm.label(address(vault), "Vault");
-    //     vm.label(address(merkleDistributor), "MerkleDistributor");
-    //     vm.label(address(usdt), "USDT");
-    //     vm.label(address(pendle), "PENDLE");
-    //     vm.label(address(votingEscrowMainchain), "VotingEscrowMainchain");
-    //     vm.label(address(votingController), "VotingController");
-    //     vm.label(address(timelockController), "TimelockController");
-    //     vm.label(alice, "Alice");
-    //     vm.label(bob, "Bob");
-    //     vm.label(charlie, "Charlie");
-    //     vm.label(david, "David");
-    //     vm.label(eve, "Eve");
-    //     vm.label(feeReceiver, "FeeReceiver");
-    // }
-
-    // function startFirstEpoch() public {
-    //     // deposit initial pendleBalance
-    //     pendle.approve(address(vault), DEPOSIT_AMOUNT);
-    //     vault.depositBeforeFirstEpoch(DEPOSIT_AMOUNT, feeReceiver);
-
-    //     vm.startPrank(address(this));
-    //     vault.startFirstEpoch();
-    //     vm.stopPrank();
-    // }
-
-    // function test_startFirstEpoch() public {
-    //     startFirstEpoch();
-    //     assertEq(vault.currentEpoch(), 1, "epoch should be 1");
-    //     assertEq(vault.currentEpochStart(), block.timestamp, "epoch start should be current timestamp");
-    //     assertEq(vault.epochDuration(), 30 days, "epoch duration should be 30 days");
-    //     assertEq(vault.totalLockedPendle(), DEPOSIT_AMOUNT, "total locked pendle should be initial deposit");
-    //     assertEq(vault.totalSupply(), DEPOSIT_AMOUNT, "total supply should be initial deposit");
-    //     assertEq(vault.totalSupply(), DEPOSIT_AMOUNT, "vault should have initial deposit");
-    // }
-
-    // function test_startFirstEpoch_RevertsIfCalledAfterFirstEpoch() public {
-    //     startFirstEpoch();
-    //     vm.expectRevert(IstPENDLE.InvalidEpoch.selector);
-    //     vault.startFirstEpoch();
-    // }
-
-    // function test_startFirstEpoch_RevertInvalidPendleBalance() public {
-    //     pendle.mint(address(this), 0);
-    //     vm.expectRevert(IstPENDLE.InvalidPendleBalance.selector);
-    //     vault.startFirstEpoch();
-    // }
-
-    // function test_Constructor() public view {
-    //     assertEq(address(vault.votingEscrowMainchain()), address(votingEscrowMainchain));
-    //     assertEq(address(vault.merkleDistributor()), address(merkleDistributor));
-    //     assertEq(address(vault.votingController()), address(votingController));
-    // }
-
-    // function test_Deposit() public {
-    //     vm.startPrank(alice);
-
-    //     pendle.approve(address(vault), DEPOSIT_AMOUNT);
-    //     uint256 shares = vault.deposit(DEPOSIT_AMOUNT, alice);
-
-    //     assertGt(shares, 0, "Should receive shares");
-    //     assertEq(vault.balanceOf(alice), shares, "User should have correct share balance");
-    //     assertEq(votingEscrowMainchain.balanceOf(address(vault)), DEPOSIT_AMOUNT, "Vault should have locked PENDLE");
-
-    //     vm.stopPrank();
-    // }
 
     // function test_ClaimFeesInPENDLE() public {
     //     startFirstEpoch();
@@ -443,27 +181,27 @@ contract stPENDLETest is Test {
     //     assertEq(vault.previewRedeem(aliceShares), aliceShares, "Snapshot value should be the same");
     // }
 
-    // function test_StartNewEpoch() public {
-    //     // Setup: start first epoch (locks initial deposit and sets epoch timing)
-    //     startFirstEpoch();
+    function test_StartNewEpoch() public {
+        // Setup: start first epoch (locks initial deposit and sets epoch timing)
+        startFirstEpoch();
 
-    //     uint256 start = vault.currentEpochStart();
-    //     uint128 dur = vault.epochDuration();
+        uint256 start = vault.currentEpochStart();
+        uint128 dur = vault.epochDuration();
 
-    //     // Too early: should revert
-    //     vm.expectRevert(IstPENDLE.EpochNotEnded.selector);
-    //     vault.startNewEpoch();
+        // Too early: should revert
+        vm.expectRevert(IstPENDLE.EpochNotEnded.selector);
+        vault.startNewEpoch();
 
-    //     // Just before boundary: still revert
-    //     vm.warp(start + dur - 1);
-    //     vm.expectRevert(IstPENDLE.EpochNotEnded.selector);
-    //     vault.startNewEpoch();
+        // Just before boundary: still revert
+        vm.warp(start + dur - 1);
+        vm.expectRevert(IstPENDLE.EpochNotEnded.selector);
+        vault.startNewEpoch();
 
-    //     // At boundary or later: should succeed
-    //     vm.warp(start + dur);
-    //     vault.startNewEpoch();
-    //     assertEq(vault.currentEpoch(), 2, "epoch should advance at or after boundary");
-    // }
+        // At boundary or later: should succeed
+        vm.warp(start + dur);
+        vault.startNewEpoch();
+        assertEq(vault.currentEpoch(), 2, "epoch should advance at or after boundary");
+    }
 
     // function test_redeembeforeNewEpoch() public {
     //     startFirstEpoch();
