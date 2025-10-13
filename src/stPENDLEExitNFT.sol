@@ -69,7 +69,7 @@ contract stPENDLEExitNFT is ERC721, OwnableRoles, ReentrancyGuard, IstPENDLEExit
     }
 
 
-    function redeemExitPosition(address _to, uint256 _tokenId) external onlyRoles(ST_PENDLE_VAULT_ROLE) returns (uint256 pendleClaimed) {
+    function redeemExitPosition(address _to, uint256 _tokenId) external returns (uint256 pendleClaimed) {
         if(ownerOf(_tokenId) != msg.sender) revert InvalidOwner();
         if(exitNFTData[_tokenId].claimed) revert AlreadyClaimed();
         pendleClaimed = stPENDLEExitPool.claimShares(_to, _tokenId);

@@ -69,7 +69,7 @@ contract stPENDLEExitPool is OwnableRoles, ReentrancyGuard, IstPENDLEExitPool {
         // burn redeemed shares
         stPENDLE.finalizeClaim(address(this), exitNFT.requestedShares, amount);
         // transfer redeemed pendle to user
-        SafeTransferLib.safeTransfer(address(stPENDLE), _to, amount);
+        SafeTransferLib.safeTransfer(address(pendle), _to, amount);
         emit SharesClaimed(_to, exitNFT.requestedShares, amount, tokenId);
     }
 

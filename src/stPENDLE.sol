@@ -18,7 +18,7 @@ import {IstPENDLEExitPool} from "src/interfaces/IstPENDLEExitPool.sol";
 import {CCIPReceiver} from "lib/chainlink-ccip/chains/evm/contracts/applications/CCIPReceiver.sol";
 import {Client} from "lib/chainlink-ccip/chains/evm/contracts/libraries/Client.sol";
 import {IRouterClient} from "lib/chainlink-ccip/chains/evm/contracts/interfaces/IRouterClient.sol";
-// import "forge-std/console.sol";
+import "forge-std/console.sol";
 /**
  * @title stPENDLE - ERC-4626 Vault for PENDLE Staking
  * @notice Accepts PENDLE deposits and stakes them in vePENDLE for rewards
@@ -226,6 +226,7 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
     function startNewEpoch() external whenNotPaused nonReentrant {
         _requireNextEpoch();
         uint256 newEpoch = _updateEpoch();
+
         // check that there is a vePENDLE to claim
         if (votingEscrowMainchain.balanceOf(address(this)) == 0) revert InsufficientBalance();
 
@@ -239,7 +240,9 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
         IstPENDLEExitPool.RedemptionData memory  redemptionData = stPENDLEExitPool.getRedemptionDataByEpoch(newEpoch);
         // calculate redemption rate for the epoch
         if(redemptionData.totalRequestedShares > 0) {
+
         uint256 assets = convertToAssets(redemptionData.totalRequestedShares);
+
         uint256 redemptionRate = assets * FEE_BASIS_POINTS / redemptionData.totalRequestedShares;
         totalPendleBalance -= assets;
 

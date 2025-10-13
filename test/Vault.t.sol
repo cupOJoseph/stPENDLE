@@ -34,7 +34,7 @@ contract stPENDLETest is Setup {
         startFirstEpoch();
         assertEq(vault.currentEpoch(), 1, "epoch should be 1");
         assertEq(vault.currentEpochStart(), block.timestamp, "epoch start should be current timestamp");
-        assertEq(vault.epochDuration(), 730 days, "epoch duration should be 30 days");
+        assertEq(vault.epochDuration(), 730 days, "epoch duration should be 730 days");
         assertEq(vault.totalLockedPendle(), DEPOSIT_AMOUNT, "total locked pendle should be initial deposit");
         assertEq(vault.totalSupply(), DEPOSIT_AMOUNT, "total supply should be initial deposit");
         assertEq(vault.totalSupply(), DEPOSIT_AMOUNT, "vault should have initial deposit");
