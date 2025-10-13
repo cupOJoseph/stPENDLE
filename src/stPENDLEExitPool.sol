@@ -44,9 +44,14 @@ contract stPENDLEExitPool is OwnableRoles, ReentrancyGuard, IstPENDLEExitPool {
         emit SharesAdded(_user, _shares, _epoch);
     }
 
-    function addPendle(uint256 _amount, uint256 _epoch) external nonReentrant onlyRoles(ST_PENDLE_VAULT_ROLE) {
+    function addPendle(uint256 _amount, uint256 _epoch) external nonReentrant {
         redemptionDataByEpoch[_epoch].totalPendle += _amount;
         SafeTransferLib.safeTransferFrom(address(stPENDLE), msg.sender, address(this), _amount);
+        emit PendleAdded(_amount, _epoch);
+    }
+
+    function increasePendle(uint256 _amount, uint256 _epoch) external nonReentrant onlyRoles(ST_PENDLE_VAULT_ROLE) {
+        redemptionDataByEpoch[_epoch].totalPendle += _amount;
         emit PendleAdded(_amount, _epoch);
     }
 

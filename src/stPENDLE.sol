@@ -244,8 +244,10 @@ contract stPENDLE is ERC4626, OwnableRoles, ReentrancyGuard, IstPENDLE, IstPENDL
         totalPendleBalance -= assets;
 
         stPENDLEExitPool.setRedemptionRate(newEpoch, redemptionRate);
-
-        stPENDLEExitPool.addPendle(assets, newEpoch);
+        // transfer assets to exit pool
+        SafeTransferLib.safeTransfer(ASSET, address(stPENDLEExitPool), assets);
+        // exit pool accounting
+        stPENDLEExitPool.increasePendle(assets, newEpoch);
         }
         // lock remaining pendle
         uint128 newExpiry = _lockPendle(totalPendleBalance, _vaultPosition.epochDuration);

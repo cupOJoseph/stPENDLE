@@ -22,5 +22,6 @@ interface IstPENDLEExitPool {
     function setRedemptionRate(uint256 epoch, uint256 redemptionRate) external;
     function addShares(address user, uint256 shares, uint256 epoch) external;
     function addPendle(uint256 amount, uint256 epoch) external;
+    function increasePendle(uint256 amount, uint256 epoch) external;
     function claimShares(address to, uint256 tokenId) external returns (uint256 amountRedeemed);
 }

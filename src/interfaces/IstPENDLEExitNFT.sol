@@ -17,8 +17,7 @@ interface IstPENDLEExitNFT {
         bool claimed;
     }
 
-    function totalWithdrawalsByEpoch(uint256 epoch) external view returns (uint256);
-    function createExitPosition(address _user, address _to, uint256 _shares) external;
+    function createExitPosition(address _to, uint256 _shares) external;
     function redeemExitPosition(address _to, uint256 _tokenId) external returns (uint256 pendleClaimed);
     function getExitNFTData(uint256 _tokenId) external view returns (ExitNFTData memory);
     function getRequestedRedemptionAmount(uint256 _tokenId) external view returns (uint256);

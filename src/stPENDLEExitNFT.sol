@@ -41,7 +41,6 @@ contract stPENDLEExitNFT is ERC721, OwnableRoles, ReentrancyGuard, IstPENDLEExit
     uint256 public tokenIdCounter;
 
     mapping(uint256 tokenId => ExitNFTData exitNFTData) public exitNFTData;
-    mapping(uint256 epoch => uint256 totalWithdrawals) public totalWithdrawalsByEpoch;
 
     constructor(address _stPendleVault, address _stPENDLEExitPool, address _admin, address _timelockController) {
         _initializeOwner(address(msg.sender));
@@ -52,21 +51,20 @@ contract stPENDLEExitNFT is ERC721, OwnableRoles, ReentrancyGuard, IstPENDLEExit
         _grantRoles(_stPendleVault, ST_PENDLE_VAULT_ROLE);
     }
 
-    function createExitPosition(address _user, address _to, uint256 _shares) external onlyRoles(ST_PENDLE_VAULT_ROLE) {
-        tokenIdCounter++;
-        uint256 tokenId = tokenIdCounter;
-        uint256 epoch = stPendleVault.currentEpoch();
+    function createExitPosition(address _to, uint256 _shares) external {
+        uint256 tokenId = ++tokenIdCounter;
+        uint256 epoch = stPendleVault.currentEpoch() + 1;
+
         // transfer requested shares to exit pool
-        SafeTransferLib.safeTransferFrom(address(stPendleVault), _user, address(stPENDLEExitPool), _shares);
+        stPENDLEExitPool.addShares(msg.sender, _shares, epoch);
         
         ExitNFTData memory exitNFT = ExitNFTData({
             requestedShares: _shares,
-            requestedEpoch: epoch + 1,
+            requestedEpoch: epoch,
             claimed: false
         });
 
         _setExitNFTData(tokenId, exitNFT);
-        totalWithdrawalsByEpoch[epoch] += _shares;
         _mint(_to, tokenId);
     }
 

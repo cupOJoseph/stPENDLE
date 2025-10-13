@@ -29,17 +29,6 @@ import {Setup} from "./Setup.t.sol";
 /// forge-lint: disable-start(all)
 
 contract stPENDLETest is Setup {
-    function startFirstEpoch() public {
-        //fast forward 2 years so first epoch == 1
-        vm.warp(block.timestamp + 105 weeks);
-        // deposit initial pendleBalance
-        pendle.approve(address(vault), DEPOSIT_AMOUNT);
-        vault.depositBeforeFirstEpoch(DEPOSIT_AMOUNT, feeReceiver);
-
-        vm.startPrank(address(this));
-        vault.startFirstEpoch();
-        vm.stopPrank();
-    }
 
     function test_startFirstEpoch() public {
         startFirstEpoch();
